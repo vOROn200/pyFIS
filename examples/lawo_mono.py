@@ -9,8 +9,8 @@ try:
 except ImportError as exc:
     raise SystemExit("The Pillow package is required: pip install pillow") from exc
 
-from pyfis.lawo import LawoFont, SerialMONOMaster
-from pyfis.lawo.mono_protocol import MONOProtocol
+from lawo import LawoFont, SerialMONOMaster
+from lawo.mono_protocol import MONOProtocol
 
 
 class PrintingMONOMaster(MONOProtocol):
