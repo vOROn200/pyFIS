@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Simple demo that renders text and sends it to a LAWO MONO LED display."""
+
+import argparse
+from pathlib import Path
+
+try:
+    from PIL import Image, ImageDraw, ImageFont  # type: ignore[import]
+except ImportError as exc:
+    raise SystemExit("The Pillow package is required: pip install pillow") from exc
+
+from pyfis.lawo import LawoFont, SerialMONOMaster
+from pyfis.lawo.mono_protocol import MONOProtocol
+
+
+class PrintingMONOMaster(MONOProtocol):
+    """Debug helper that logs frames instead of talking to real hardware."""
+
+    def _send(self, frame):
+        print(f"[dry-run] sending {len(frame)} bytes: "
+              f"{' '.join(f'{byte:02X}' for byte in frame)}")
+
+    def _receive(self, length):
+        print(f"[dry-run] waiting for {length} bytes of reply")
+        return bytes([0x7E] + [0x00] * (length - 2) + [0x7E])
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=("Render text with a LAWO font (or the default Pillow font) "
+                     "and push it to a MONO LED sign."),
+    )
+    parser.add_argument("text", type=str, help="Text to display")
+    parser.add_argument("--port", default="/dev/ttyUSB0",
+                        help="Serial port connected to the MONO bus")
+    parser.add_argument("--baudrate", type=int, default=19200,
+                        help="Serial baudrate")
+    parser.add_argument("--address", type=lambda v: int(v, 0), default=0x0,
+                        help="MONO bus address (0x0 - 0xF)")
+    parser.add_argument("--width", type=int, required=True,
+                        help="Display width in pixels")
+    parser.add_argument("--height", type=int, required=True,
+                        help="Display height in pixels")
+    parser.add_argument("--font-file", type=Path,
+                        help="Optional LAWO *.F?? font file")
+    parser.add_argument("--save-image", type=Path,
+                        help="Store the rendered bitmap for inspection")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Do not open the serial port, only print frames")
+    parser.add_argument("--debug", action="store_true",
+                        help="Dump raw MONO frames")
+    return parser.parse_args()
+
+
+def render_text_image(text, width, height, font_path):
+    """Render text into a grayscale Pillow image that matches the LED size."""
+
+    if font_path:
+        font = LawoFont()
+        font.read_file(str(font_path))
+        glyph_img = font.render_text(text)
+    else:
+        font = ImageFont.load_default()
+        tmp = Image.new("L", (width * 2 or 1, height or font.size), 0)
+        draw = ImageDraw.Draw(tmp)
+        draw.text((0, 0), text, fill=255, font=font)
+        bbox = tmp.getbbox()
+        glyph_img = tmp.crop(bbox) if bbox else tmp
+
+    canvas = Image.new("L", (width, height), 0)
+    crop = glyph_img.crop((0, 0, min(width, glyph_img.width),
+                           min(height, glyph_img.height)))
+    x_off = max(0, (width - crop.width) // 2)
+    y_off = max(0, (height - crop.height) // 2)
+    canvas.paste(crop, (x_off, y_off))
+    return canvas
+
+
+def main():
+    args = parse_args()
+    image = render_text_image(args.text, args.width, args.height, args.font_file)
+
+    if args.save_image:
+        image.save(args.save_image)
+        print(f"Saved preview bitmap to {args.save_image}")
+
+    master = (PrintingMONOMaster(debug=args.debug)
+              if args.dry_run else
+              SerialMONOMaster(args.port, baudrate=args.baudrate, debug=args.debug))
+
+    master.set_display_attributes(args.address, {"width": args.width, "height": args.height})
+    master.display_image_led(args.address, image)
+    print("Bitmap queued for display")
+
+
+if __name__ == "__main__":
+    main()
