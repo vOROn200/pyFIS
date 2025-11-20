@@ -244,7 +244,7 @@ class MONOProtocol:
         
         if type(image) is str:
             image = Image.open(image)
-        elif type(image) is not Image:
+        elif not isinstance(image, Image.Image):
             raise ValueError("image needs to be either a file path or a PIL Image instance")
         
         pixels = image.load()
