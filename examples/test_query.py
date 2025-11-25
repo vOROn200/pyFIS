@@ -9,7 +9,6 @@ matches the 0x91/0xA1 pattern seen in the CU-5 serial dump.
 
 import argparse
 import time
-from examples.test_query import print_reply
 from lawo import SerialMONOMaster
 
 
@@ -42,7 +41,11 @@ def parse_args():
     )
     return parser.parse_args()
 
-
+def print_reply(reply):
+    if reply:
+        print(f"Reply received: {' '.join(f'{b:02X}' for b in reply)}")
+    else:
+        print("No reply received")
 
 def main():
     args = parse_args()
