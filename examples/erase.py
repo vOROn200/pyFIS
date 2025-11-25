@@ -31,12 +31,13 @@ def parse_args():
     parser.add_argument(
         "--address",
         type=lambda v: int(v, 0),
-        default=0x0,
+        default=0x5,
         help="MONO bus address (0x0 - 0xF), use 0x prefix for hex",
     )
     parser.add_argument(
         "--debug",
         action="store_true",
+        default=True,
         help="Enable debug output in SerialMONOMaster",
     )
     return parser.parse_args()
@@ -65,15 +66,11 @@ PRE_BITMAP_PARAM_1 = 0x24  # total number of column segments
 PRE_BITMAP_PARAM_2 = 0x12  # segments per half (odd/even)
 
 
-def erase_display(master: SerialMONOMaster, address: int, width: int, height: int) -> None:
+def erase_display(master: SerialMONOMaster, address: int) -> None:
     """
     Send a bitmap preamble and then 36 all-zero column-data frames
     to clear the entire physical panel.
     """
-    print(
-        f"\nClearing display at bus address 0x{address:X} "
-        f"(logical size {width}x{height})..."
-    )
 
     # 1) Tell the controller that a bitmap transfer is about to follow.
     #    These parameters are taken directly from the CU-5 dump:
@@ -115,7 +112,7 @@ def main():
 
         time.sleep(0.2)
     
-        erase_display(master, args.address, args.width, args.height)
+        erase_display(master, args.address)
     finally:
         # If SerialMONOMaster exposes a close() method, call it.
         # If not, this is harmless.
