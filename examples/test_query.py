@@ -62,17 +62,12 @@ def main():
 
         time.sleep(0.2)
     
-        reply = master.send_command(args.address, master.CMD_PRE_BITMAP_FLIPDOT, [0x24, 0x12])
+        reply = master.send_command(args.address, master.CMD_PRE_BITMAP_FLIPDOT, [0x24, 0x1])
         print_reply(reply)
 
         time.sleep(0.2)
 
-        data = [0x24, 
-                0x90, 0x00, 0x00, 0x00, 0x00, 0x00,  
-                0x90, 0x00, 0x00, 0x00, 0x00, 0x00,  
-                0x90, 0x00, 0x00, 0x00, 0x00, 0x00,  
-                0x90, 0x00, 0x00, 0x00, 0x00, 0x00,  
-                0x90, 0x00, 0x00, 0x00, 0x00, 0x00,  
+        data = [0x24 , 0x90, 0, 0,0,0,0
                 ]
 
         reply = master.send_command(args.address, master.CMD_COLUMN_DATA_FLIPDOT, data)
@@ -80,8 +75,8 @@ def main():
 
         time.sleep(0.2)
 
-        reply = master.send_command(args.address, master.CMD_QUERY, [0x7E])
-        print_reply(reply)
+        #reply = master.send_command(args.address, master.CMD_QUERY, [0x7E])
+        #print_reply(reply)
 
         
     finally:
