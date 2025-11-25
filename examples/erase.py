@@ -113,6 +113,13 @@ def main():
         time.sleep(0.2)
     
         erase_display(master, args.address)
+
+        time.sleep(0.2)
+
+        reply = master.send_command(args.address, master.CMD_QUERY, [0x7E])
+        print_reply(reply)
+
+        
     finally:
         # If SerialMONOMaster exposes a close() method, call it.
         # If not, this is harmless.
