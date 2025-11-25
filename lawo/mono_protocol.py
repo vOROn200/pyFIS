@@ -54,7 +54,7 @@ class MONOProtocol:
         """
         pass
     
-    def _receive(self, length):
+    def _receive(self):
         """
         Actually receive data.
         This varies depending on implementation and needs to be overridden
@@ -101,16 +101,17 @@ class MONOProtocol:
     
     def checksum_flipdot(self, payload):
         """
-        MONO flipdot CHECKSUM: XOR every byte, start with 0xFF
+        MONO flipdot CHECKSUM: XOR every byte (start with 0), then subtract from 0xFF
+        Formula: 0xFF - (byte1 XOR byte2 XOR ... XOR byteN)
         
         payload:
         The payload to calculate the checksum for
         """
         
-        chk = 0xFF
+        xorval = 0
         for b in payload:
-            chk ^= b
-        return chk
+            xorval ^= b
+        return 0xFF - xorval
     
     def escape_frame(self, frame):
         """
@@ -147,15 +148,26 @@ class MONOProtocol:
         prepared_frame = [0x7e] + prepared_frame + [0x7e]
         return prepared_frame
     
-    def send_frame(self, frame, reply_length = 0):
+    def validate_frame(self, frame):
+        """
+        Validate a received frame (check start/stop bytes) and strip them.
+        
+        frame:
+        The frame to validate
+        
+        Returns:
+        The payload (stripped frame) or the original frame if invalid
+        """
+        if len(frame) >= 2 and frame[0] == 0x7E and frame[-1] == 0x7E:
+            return frame[1:-1]
+        return frame
+
+    def send_frame(self, frame):
         """
         Send an arbitrary frame. Calls prepare_frame internally.
         
         frame:
         The frame to send
-        
-        reply_length:
-        How many bytes to expect as a reply
         
         Returns:
         The received frame OR None
@@ -167,11 +179,12 @@ class MONOProtocol:
         frame = self.prepare_frame(frame)
         self.debug_frame(frame)
         self._send(frame)
-        if reply_length:
-            reply = self._receive(reply_length + 3)
+        
+        reply = self._receive()
+        if reply:
             self.debug_frame(reply, receive=True)
-            reply = reply[1:-2]
-            return reply
+            return self.validate_frame(reply)
+        return None
     
     def get_command_byte(self, command, address):
         """
@@ -186,7 +199,7 @@ class MONOProtocol:
         
         return (command & 0xF0) | (address & 0x0F)
     
-    def send_command(self, address, command, payload, reply_length = 0):
+    def send_command(self, address, command, payload, checksum_method = 'flipdot'):
         """
         Send a command frame to a display.
         
@@ -199,14 +212,22 @@ class MONOProtocol:
         payload:
         The payload to send after the command byte
         
-        reply_length:
-        How many bytes to expect as a reply
+        checksum_method:
+        Optional checksum method: 'led', 'flipdot', or None
         """
         
         frame = []
-        frame.append(self.get_command_byte(command, address))
+        cmd_byte = self.get_command_byte(command, address)
+        frame.append(cmd_byte)
         frame += payload
-        return self.send_frame(frame, reply_length=reply_length)
+        
+        # Add checksum if requested
+        if checksum_method == 'led':
+            frame.append(self.checksum_led([cmd_byte] + payload))
+        elif checksum_method == 'flipdot':
+            frame.append(self.checksum_flipdot([cmd_byte] + payload))
+        
+        return self.send_frame(frame)
     
     def send_bitmap_data_led(self, address, bitmap_data):
         """
@@ -225,7 +246,7 @@ class MONOProtocol:
         
         payload = [0xFF, len(bitmap_data)] + bitmap_data
         payload.append(self.checksum_led(bitmap_data))
-        return self.send_command(address, self.CMD_BITMAP_DATA_LED, payload)
+        return self.send_command(address, self.CMD_BITMAP_DATA_LED, payload, checksum_method='flipdot')
     
     def send_image_led(self, address, image):
         """
@@ -283,13 +304,13 @@ class MONOProtocol:
         width_blocks = math.ceil(width/4)
         height_blocks = math.ceil(height/4)
         
-        self.send_command(address, self.CMD_PRE_BITMAP_LED_1, [0x00, 0xff, 0x2f, 0x10, 0x20, 0x40, 0x60, 0x90, 0xc0, 0xf0, 0x03, 0x13, 0x33, 0x53, 0x83, 0xb3, 0xe3, 0x89])
+        self.send_command(address, self.CMD_PRE_BITMAP_LED_1, [0x00, 0xff, 0x2f, 0x10, 0x20, 0x40, 0x60, 0x90, 0xc0, 0xf0, 0x03, 0x13, 0x33, 0x53, 0x83, 0xb3, 0xe3, 0x89], checksum_method='flipdot')
         time.sleep(0.05)
-        self.send_command(address, self.CMD_PRE_BITMAP_LED_2, [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, num_img_bytes, width_blocks, height_blocks])
+        self.send_command(address, self.CMD_PRE_BITMAP_LED_2, [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, num_img_bytes, width_blocks, height_blocks], checksum_method='flipdot')
         time.sleep(0.05)
         self.send_image_led(address, image)
         time.sleep(0.05)
-        self.send_command(address, self.CMD_DISPLAY_BITMAP_LED, [0x1a])
+        self.send_command(address, self.CMD_DISPLAY_BITMAP_LED, [0x1a], checksum_method='flipdot')
         time.sleep(0.05)
     
     def send_column_data_flipdot(self, address, col_address, column_data):
@@ -313,8 +334,8 @@ class MONOProtocol:
         """
         
         payload = [col_address] + column_data + [0x00]
-        payload.append(self.checksum_flipdot([self.get_command_byte(self.CMD_COLUMN_DATA_FLIPDOT, address)] + payload))
-        return self.send_command(address, self.CMD_COLUMN_DATA_FLIPDOT, payload)
+        # Checksum is added automatically by send_command
+        return self.send_command(address, self.CMD_COLUMN_DATA_FLIPDOT, payload, checksum_method='flipdot')
     
     def send_image_flipdot(self, address, image, col_offset):
         """

@@ -53,15 +53,57 @@ class SerialMONOMaster(MONOProtocol):
         This varies depending on implementation
         """
         
+        # Clear input buffer before sending to avoid reading stale data
+        self.device.reset_input_buffer()
         self.device.write(frame)
     
-    def _receive(self, length):
+    def _receive(self):
         """
         Actually receive data.
-        This varies depending on implementation and needs to be overridden
+        Reads all available data from serial port.
+        The data may contain echo of sent command followed by actual response.
         """
         
-        return self.device.read(length)
+        import time
+        
+        # Wait a bit for response to arrive
+        time.sleep(0.1)
+        
+        # Read all available data
+        available = self.device.in_waiting
+        if available > 0:
+            data = self.device.read(available)
+            
+            # Parse frames from data
+            frames = []
+            current_frame = bytearray()
+            in_frame = False
+            
+            for byte in data:
+                if byte == 0x7E:
+                    if in_frame:
+                        # End of frame
+                        current_frame.append(byte)
+                        frames.append(bytes(current_frame))
+                        current_frame = bytearray()
+                        in_frame = False
+                    else:
+                        # Start of frame
+                        current_frame = bytearray([byte])
+                        in_frame = True
+                else:
+                    if in_frame:
+                        current_frame.append(byte)
+            
+            # Return last complete frame (skip echo)
+            if len(frames) >= 2:
+                return frames[-1]
+            elif frames:
+                return frames[0]
+        
+        return bytes()
+
 
     def __del__(self):
-        self.device.close()
+        if hasattr(self, 'device'):
+            self.device.close()
