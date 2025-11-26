@@ -9,7 +9,7 @@ matches the 0x91/0xA1 pattern seen in the CU-5 serial dump.
 
 import argparse
 import time
-from examples.test_query import print_reply
+from main import print_reply
 from lawo import SerialMONOMaster
 
 

@@ -4,4 +4,4 @@ build/
 dist/
 __pycache__/
 hello.png
-venv
+.venv/

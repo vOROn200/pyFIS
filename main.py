@@ -41,12 +41,6 @@ def parse_args():
     )
     return parser.parse_args()
 
-def print_reply(reply):
-    if reply:
-        print(f"Reply received: {' '.join(f'{b:02X}' for b in reply)}")
-    else:
-        print("No reply received")
-
 def main():
     args = parse_args()
 
@@ -56,44 +50,28 @@ def main():
         debug=args.debug,
     )
 
-    try:
-        reply = master.send_command(args.address, master.CMD_QUERY, [])
-        print_reply(reply)
+    master.send_command(args.address, master.CMD_QUERY, [])
 
-        time.sleep(0.2)
-    
-        reply = master.send_command(args.address, master.CMD_PRE_BITMAP_FLIPDOT, [0x24, 0x12])
-        print_reply(reply)
+    time.sleep(0.2)
 
-        time.sleep(0.2)
+    master.send_command(args.address, master.CMD_PRE_BITMAP_FLIPDOT, [0x05, 0x01])
 
-        data = [0x24 , 
-                0x90, 0xFF, 0xFF,0,0,0,
-                0x90, 0, 0,0,0,0,
-                0x90, 0, 0,0,0,0,
-                0x90, 0, 0,0,0,0,
-                0x90, 0, 0,0,0,0,
-                0x90, 0, 0,0,0xFF,0xFF,
-                ]
+    time.sleep(0.2) 
 
-        reply = master.send_command(args.address, master.CMD_COLUMN_DATA_FLIPDOT, data)
-        print_reply(reply)
+    data = [0x05 , 
+            0x90, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0x90, 0, 0, 0 , 0, 0,
+            0x90, 0, 0, 0,  0, 0,
+            0x90, 0, 0 ,0 , 0, 0, 
+            0x90, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            ]
 
-        time.sleep(0.2)
+    master.send_command(args.address, master.CMD_COLUMN_DATA_FLIPDOT, data)
 
-        input ("Press Enter to send another query...")
+    time.sleep(0.2) 
 
-        reply = master.send_command(args.address, master.CMD_QUERY, [0x7E])
-        print_reply(reply)
+    master.send_command(args.address, master.CMD_QUERY, [])
 
-        
-    finally:
-        # If SerialMONOMaster exposes a close() method, call it.
-        # If not, this is harmless.
-        close = getattr(master, "close", None)
-        if callable(close):
-            close()
-        input("Press Enter to exit...")
 
 
 if __name__ == "__main__":
