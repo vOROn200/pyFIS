@@ -3,8 +3,8 @@
 import time
 from lawo import SerialMONOMaster
 
-ADDRESS = int(0x05)
-PAUSE = 0.2
+DISPLAY_ADDRESS = int(0x05)
+COMMAND_DELAY_SEC = 0.2
 
 
 def main():
@@ -16,13 +16,13 @@ def main():
         debug=True,
     )
 
-    bus.send_command(ADDRESS, bus.CMD_QUERY, [])
+    bus.send_command(DISPLAY_ADDRESS, bus.CMD_QUERY, [])
 
-    time.sleep(PAUSE)
+    time.sleep(COMMAND_DELAY_SEC)
 
-    bus.send_command(ADDRESS, bus.CMD_PRE_BITMAP_FLIPDOT, [0x05, 0x01])
+    bus.send_command(DISPLAY_ADDRESS, bus.CMD_PRE_BITMAP_FLIPDOT, [0x05, 0x01])
 
-    time.sleep(PAUSE)
+    time.sleep(COMMAND_DELAY_SEC)
 
     payload = [0x05]
 
@@ -36,11 +36,11 @@ def main():
     ])
     # fmt: on
 
-    bus.send_command(ADDRESS, bus.CMD_COLUMN_DATA_FLIPDOT, payload)
+    bus.send_command(DISPLAY_ADDRESS, bus.CMD_COLUMN_DATA_FLIPDOT, payload)
 
-    time.sleep(PAUSE)
+    time.sleep(COMMAND_DELAY_SEC)
 
-    bus.send_command(ADDRESS, bus.CMD_QUERY, [])
+    bus.send_command(DISPLAY_ADDRESS, bus.CMD_QUERY, [])
 
 
 if __name__ == "__main__":
