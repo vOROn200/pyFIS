@@ -17,6 +17,7 @@ def main():
     bus = SerialMONOMaster(
         "COM3",
         baudrate=19200,
+        stopbits=1,
         debug=True,
     )
 
