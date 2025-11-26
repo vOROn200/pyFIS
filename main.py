@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
-"""
-Clear a LAWO flipdot panel over the MONO/Alpha-like protocol.
-
-This script sends a PRE_BITMAP_FLIPDOT command followed by 36
-COLUMN_DATA_FLIPDOT telegrams with all-zero pixel data, which
-matches the 0x91/0xA1 pattern seen in the CU-5 serial dump.
-"""
 
 import time
 from lawo import SerialMONOMaster
 
+ADDRESS = int(0x05)
+PAUSE = 0.2
+
+
 def main():
 
-    ADDRESS = int(0x05)
-
     bus = SerialMONOMaster(
-        "COM3",
+        port="COM3",
         baudrate=19200,
         stopbits=1,
         debug=True,
@@ -23,25 +18,30 @@ def main():
 
     bus.send_command(ADDRESS, bus.CMD_QUERY, [])
 
-    time.sleep(0.2)
+    time.sleep(PAUSE)
 
     bus.send_command(ADDRESS, bus.CMD_PRE_BITMAP_FLIPDOT, [0x05, 0x01])
 
-    time.sleep(0.2) 
+    time.sleep(PAUSE)
 
-    data = [0x05 , 
-            0x90, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0x90, 0, 0, 0 , 0, 0,
-            0x90, 0, 0, 0,  0, 0,
-            0x90, 0, 0 ,0 , 0, 0, 
-            0x90, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            ]
+    payload = [0x05]
 
-    bus.send_command(ADDRESS, bus.CMD_COLUMN_DATA_FLIPDOT, data)
+    # fmt: off
+    payload.extend([
+        0x90, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0x90, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x90, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x90, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x90, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ])
+    # fmt: on
 
-    time.sleep(0.2) 
+    bus.send_command(ADDRESS, bus.CMD_COLUMN_DATA_FLIPDOT, payload)
+
+    time.sleep(PAUSE)
 
     bus.send_command(ADDRESS, bus.CMD_QUERY, [])
+
 
 if __name__ == "__main__":
     main()
