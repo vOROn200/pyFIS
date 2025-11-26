@@ -7,54 +7,24 @@ COLUMN_DATA_FLIPDOT telegrams with all-zero pixel data, which
 matches the 0x91/0xA1 pattern seen in the CU-5 serial dump.
 """
 
-import argparse
 import time
 from lawo import SerialMONOMaster
 
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Clear a LAWO flipdot panel via MONO bus"
-    )
-    parser.add_argument(
-        "--port",
-        default="COM3",
-        help="Serial port name (e.g. COM3, /dev/ttyUSB0)",
-    )
-    parser.add_argument(
-        "--baudrate",
-        type=int,
-        default=19200,
-        help="Serial baudrate (default: 19200)",
-    )
-    parser.add_argument(
-        "--address",
-        type=lambda v: int(v, 0),
-        default=0x5,
-        help="MONO bus address (0x0 - 0xF), use 0x prefix for hex",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        default=True,
-        help="Enable debug output in SerialMONOMaster",
-    )
-    return parser.parse_args()
-
 def main():
-    args = parse_args()
 
-    master = SerialMONOMaster(
-        args.port,
-        baudrate=args.baudrate,
-        debug=args.debug,
+    ADDRESS = int(0x05)
+
+    bus = SerialMONOMaster(
+        "COM3",
+        baudrate=19200,
+        debug=True,
     )
 
-    master.send_command(args.address, master.CMD_QUERY, [])
+    bus.send_command(ADDRESS, bus.CMD_QUERY, [])
 
     time.sleep(0.2)
 
-    master.send_command(args.address, master.CMD_PRE_BITMAP_FLIPDOT, [0x05, 0x01])
+    bus.send_command(ADDRESS, bus.CMD_PRE_BITMAP_FLIPDOT, [0x05, 0x01])
 
     time.sleep(0.2) 
 
@@ -66,13 +36,11 @@ def main():
             0x90, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
             ]
 
-    master.send_command(args.address, master.CMD_COLUMN_DATA_FLIPDOT, data)
+    bus.send_command(ADDRESS, bus.CMD_COLUMN_DATA_FLIPDOT, data)
 
     time.sleep(0.2) 
 
-    master.send_command(args.address, master.CMD_QUERY, [])
-
-
+    bus.send_command(ADDRESS, bus.CMD_QUERY, [])
 
 if __name__ == "__main__":
     main()
