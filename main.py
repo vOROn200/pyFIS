@@ -4,7 +4,7 @@ import time
 from lawo import SerialMONOMaster
 
 DISPLAY_ADDRESS = int(0x05)
-COMMAND_DELAY_SEC = 0.2
+COMMAND_DELAY = 0.2
 
 
 def main():
@@ -18,11 +18,11 @@ def main():
 
     bus.send_command(DISPLAY_ADDRESS, bus.CMD_QUERY, [])
 
-    time.sleep(COMMAND_DELAY_SEC)
+    time.sleep(COMMAND_DELAY)
 
     bus.send_command(DISPLAY_ADDRESS, bus.CMD_PRE_BITMAP_FLIPDOT, [0x05, 0x01])
 
-    time.sleep(COMMAND_DELAY_SEC)
+    time.sleep(COMMAND_DELAY)
 
     payload = [0x05]
 
@@ -38,7 +38,7 @@ def main():
 
     bus.send_command(DISPLAY_ADDRESS, bus.CMD_COLUMN_DATA_FLIPDOT, payload)
 
-    time.sleep(COMMAND_DELAY_SEC)
+    time.sleep(COMMAND_DELAY)
 
     bus.send_command(DISPLAY_ADDRESS, bus.CMD_QUERY, [])
 
