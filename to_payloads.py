@@ -43,7 +43,11 @@ DEBUG_SHOW_BITS = True
 
 # Number of bits to trim from the END of the sequence for each type
 TRIM_END_BITS_TYPE_90 = 0
-TRIM_END_BITS_TYPE_10 = 2
+TRIM_END_BITS_TYPE_10 = 0
+
+# Number of bits to trim from the START of the sequence for each type
+TRIM_START_BITS_TYPE_90 = 0
+TRIM_START_BITS_TYPE_10 = 2
 
 
 def format_payload(payload: List[int]) -> str:
@@ -78,14 +82,20 @@ def main() -> None:
 
     # Apply trimming
     for addr, t in queues:
-        trim_count = 0
+        trim_end = 0
+        trim_start = 0
         if t == 0x90:
-            trim_count = TRIM_END_BITS_TYPE_90
+            trim_end = TRIM_END_BITS_TYPE_90
+            trim_start = TRIM_START_BITS_TYPE_90
         elif t == 0x10:
-            trim_count = TRIM_END_BITS_TYPE_10
+            trim_end = TRIM_END_BITS_TYPE_10
+            trim_start = TRIM_START_BITS_TYPE_10
 
-        if trim_count > 0:
-            queues[(addr, t)] = queues[(addr, t)][:-trim_count]
+        if trim_start > 0:
+            queues[(addr, t)] = queues[(addr, t)][trim_start:]
+
+        if trim_end > 0:
+            queues[(addr, t)] = queues[(addr, t)][:-trim_end]
 
     # Optional: debug info to stderr
     print("Bit counts per (addr, type):", file=sys.stderr)
@@ -95,30 +105,50 @@ def main() -> None:
         total_bits += n
 
         # Calculate trimmed bits for display
-        trim_count = 0
+        trim_end = 0
+        trim_start = 0
         if t == 0x90:
-            trim_count = TRIM_END_BITS_TYPE_90
+            trim_end = TRIM_END_BITS_TYPE_90
+            trim_start = TRIM_START_BITS_TYPE_90
         elif t == 0x10:
-            trim_count = TRIM_END_BITS_TYPE_10
+            trim_end = TRIM_END_BITS_TYPE_10
+            trim_start = TRIM_START_BITS_TYPE_10
 
-        print(f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} (trimmed {trim_count} from end)", file=sys.stderr)
+        print(
+            f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} (trimmed start={trim_start}, end={trim_end})",
+            file=sys.stderr,
+        )
 
         if DEBUG_SHOW_BITS:
             # Use original bits to show what was there, and highlight trimmed part
             bits = original_queues[(addr, t)]
 
-            # Format first 16 bits
-            first_16_str = "".join(str(b) for b in bits[:16])
+            # --- Format first 16 bits (START trimming) ---
+            first_16_bits = bits[:16]
+            if trim_start > 0:
+                # Split first 16 into trimmed and kept parts
+                # trimmed part length within the first 16 window
+                trimmed_len = min(trim_start, 16)
 
-            # Format last 16 bits (handling trimming visualization)
+                trimmed_part = "".join(str(b) for b in first_16_bits[:trimmed_len])
+                kept_part = "".join(str(b) for b in first_16_bits[trimmed_len:])
+
+                # ANSI color for red (trimmed part)
+                RED = "\033[91m"
+                RESET = "\033[0m"
+                first_16_str = f"{RED}{trimmed_part}{RESET}{kept_part}"
+            else:
+                first_16_str = "".join(str(b) for b in first_16_bits)
+
+            # --- Format last 16 bits (END trimming) ---
             # We take the last 16 bits of the ORIGINAL sequence
             last_16_bits = bits[-16:]
 
             # If trimming happened within the last 16 bits
-            if trim_count > 0:
+            if trim_end > 0:
                 # Split last 16 into kept and trimmed parts
                 # kept part length within the last 16 window
-                kept_len = max(0, 16 - trim_count)
+                kept_len = max(0, 16 - trim_end)
 
                 kept_part = "".join(str(b) for b in last_16_bits[:kept_len])
                 trimmed_part = "".join(str(b) for b in last_16_bits[kept_len:])
