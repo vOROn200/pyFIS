@@ -11,6 +11,18 @@ Shared logic for a 26x48 LAWO flip-dot/LED panel:
     * convert a logical 26x48 matrix into (addr, type) bit queues,
     * build CMD_COLUMN_DATA_FLIPDOT payloads from these queues,
     * read a 26x48 ANSI-art file into a logical matrix (with warnings).
+
+Scan order inside segments:
+
+- Top segments (row_start == 0):
+    rows:    top -> bottom
+    columns: left -> right
+    start:   top-left corner
+
+- Bottom segments (row_start > 0):
+    rows:    bottom -> top
+    columns: right -> left
+    start:   bottom-right corner
 """
 
 import sys
@@ -319,8 +331,19 @@ def fill_matrix_from_segments(
 ) -> Tuple[List[List[int]], List[List[Optional[int]]]]:
     """
     Build the logical MATRIX_ROWS x MATRIX_COLS matrix using separate queues
-    per segment and per type, filling each segment independently in
-    column-major order.
+    per segment and per type.
+
+    Scan order:
+
+      - Top segments (row_start == 0):
+            for row from top to bottom:
+                for col from left to right:
+                    consume next bit for matching (addr, type)
+
+      - Bottom segments (row_start > 0):
+            for row from bottom to top:
+                for col from right to left:
+                    consume next bit for matching (addr, type)
 
     Returns:
       - matrix_bits[row][col]  -> 0 or 1
@@ -341,9 +364,18 @@ def fill_matrix_from_segments(
         q90 = bit_queues.setdefault((addr_90, TYPE_90), deque())
         q10 = bit_queues.setdefault((addr_10, TYPE_10), deque())
 
-        # Column-major filling inside the segment (vertical fill)
-        for col in range(cs, ce):
-            for row in range(rs, re):
+        # Define scan ranges depending on segment position (top vs bottom)
+        if rs == 0:
+            # Top segments: top -> bottom, left -> right
+            row_range = range(rs, re)
+            col_range = range(cs, ce)
+        else:
+            # Bottom segments: bottom -> top, right -> left
+            row_range = range(re - 1, rs - 1, -1)
+            col_range = range(ce - 1, cs - 1, -1)
+
+        for row in row_range:
+            for col in col_range:
                 seg_row = row - rs
                 seg_col = col - cs
                 ptype = logical_type_for_segment_pixel(seg_row, seg_col)
@@ -376,14 +408,19 @@ def build_bit_queues_from_matrix(
     """
     Convert the logical matrix into bit queues for each (addr, type) pair.
 
-    For each segment:
-      - iterate in column-major order (vertical fill):
-            for col in segment:
-                for row in segment:
-                    derive type (0x90/0x10 or None) from local (seg_row, seg_col)
-      - for each real pixel (type != None), append its bit (0/1) to the
-        corresponding queue keyed by (addr, type), where addr is chosen
-        from segment.addr_90 or segment.addr_10.
+    Scan order matches fill_matrix_from_segments:
+
+      - Top segments (row_start == 0):
+            rows    top -> bottom
+            columns left -> right
+
+      - Bottom segments (row_start > 0):
+            rows    bottom -> top
+            columns right -> left
+
+    For each real pixel (type != None), append its bit (0/1) to the
+    corresponding queue keyed by (addr, type), where addr is chosen
+    from segment.addr_90 or segment.addr_10.
     """
     queues: Dict[Tuple[int, int], List[int]] = {}
 
@@ -395,8 +432,17 @@ def build_bit_queues_from_matrix(
         addr_90 = seg["addr_90"]
         addr_10 = seg["addr_10"]
 
-        for col in range(cs, ce):
-            for row in range(rs, re):
+        if rs == 0:
+            # Top segments: top -> bottom, left -> right
+            row_range = range(rs, re)
+            col_range = range(cs, ce)
+        else:
+            # Bottom segments: bottom -> top, right -> left
+            row_range = range(re - 1, rs - 1, -1)
+            col_range = range(ce - 1, cs - 1, -1)
+
+        for row in row_range:
+            for col in col_range:
                 seg_row = row - rs
                 seg_col = col - cs
                 ptype = logical_type_for_segment_pixel(seg_row, seg_col)
@@ -507,7 +553,7 @@ def build_column_payloads(
 
 # ---------------------------------------------------------------------------
 # ANSI matrix reader (for ansi_to_payload)
-#   ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 
 def read_ansi_matrix_from_file(path: str) -> List[List[int]]:
