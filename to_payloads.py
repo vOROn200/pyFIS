@@ -47,6 +47,10 @@ DEBUG_SHOW_BITS = True
 SHIFT_BITS_TYPE_90 = 0
 SHIFT_BITS_TYPE_10 = 2
 
+# Number of bits to cut from the START of the sequence for each type (applied BEFORE shift)
+CUT_START_BITS_TYPE_90 = 0
+CUT_START_BITS_TYPE_10 = 2
+
 
 def format_payload(payload: List[int]) -> str:
     """Format a payload as a CSV line with 0xXX tokens."""
@@ -78,14 +82,18 @@ def main() -> None:
     # Keep a copy of original queues for debug display
     original_queues = {k: list(v) for k, v in queues.items()}
 
-    # Apply shifting
+    # Apply shifting and cutting
     for addr, t in queues:
+        cut = 0
         shift = 0
         if t == 0x90:
+            cut = CUT_START_BITS_TYPE_90
             shift = SHIFT_BITS_TYPE_90
         elif t == 0x10:
+            cut = CUT_START_BITS_TYPE_10
             shift = SHIFT_BITS_TYPE_10
 
+        # 1. Apply Shift
         if shift < 0:
             # Negative shift: Remove bits from start (Shift Left)
             # We append zeros at the end to maintain length
@@ -96,6 +104,10 @@ def main() -> None:
             # We remove bits from the end to maintain length
             queues[(addr, t)] = ([0] * shift + queues[(addr, t)])[:-shift]
 
+        # 2. Apply Cut (Start)
+        if cut > 0:
+            queues[(addr, t)] = queues[(addr, t)][cut:]
+
     # Optional: debug info to stderr
     print("Bit counts per (addr, type):", file=sys.stderr)
     total_bits = 0
@@ -103,15 +115,18 @@ def main() -> None:
         n = len(queues[(addr, t)])
         total_bits += n
 
-        # Calculate shift for display
+        # Calculate params for display
+        cut = 0
         shift = 0
         if t == 0x90:
+            cut = CUT_START_BITS_TYPE_90
             shift = SHIFT_BITS_TYPE_90
         elif t == 0x10:
+            cut = CUT_START_BITS_TYPE_10
             shift = SHIFT_BITS_TYPE_10
 
         print(
-            f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} (shift={shift})",
+            f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} (shift={shift}, cut={cut})",
             file=sys.stderr,
         )
 
@@ -126,39 +141,80 @@ def main() -> None:
             RESET = "\033[0m"
 
             # --- Format first 16 bits ---
-            if shift < 0:
-                # Shift Left (Removed bits from start)
-                removed_count = abs(shift)
-                removed_part = "".join(str(b) for b in orig_bits[:removed_count])
+            disp_str = ""
 
-                # Limit removed part display
-                disp_removed = removed_part[:16]
+            if shift > 0:
+                # Shift Right: Added 'shift' zeros to start.
+                # Then Cut: Removed 'cut' bits from the new start.
+
+                # 1. Zeros that were added but then cut -> RED
+                del_zeros_count = min(cut, shift)
+                if del_zeros_count > 0:
+                    disp_str += f"{RED}{'0' * del_zeros_count}{RESET}"
+
+                # 2. Zeros that were added and kept -> GREEN
+                kept_zeros_count = max(0, shift - cut)
+                if kept_zeros_count > 0:
+                    disp_str += f"{GREEN}{'0' * kept_zeros_count}{RESET}"
+
+                # 3. Original bits that were cut -> RED
+                # This happens if cut > shift
+                del_orig_count = max(0, cut - shift)
+                if del_orig_count > 0:
+                    part = "".join(str(b) for b in orig_bits[:del_orig_count])
+                    # Limit display
+                    if len(part) > 16:
+                        part = part[:13] + "..."
+                    disp_str += f"{RED}{part}{RESET}"
+
+                # 4. Current bits (rest)
+                # curr_bits starts with kept_zeros_count zeros (already shown as GREEN)
+                # so we skip them in curr_bits to avoid duplication in display
+                rest_part = "".join(str(b) for b in curr_bits[kept_zeros_count : kept_zeros_count + 16])
+                disp_str += rest_part
+
+            elif shift < 0:
+                # Shift Left: Removed abs(shift) bits from start.
+                # Then Cut: Removed 'cut' bits from the new start.
+                abs_shift = abs(shift)
+
+                # 1. Shift-removed bits -> RED
+                shift_removed_part = "".join(str(b) for b in orig_bits[:abs_shift])
+                if len(shift_removed_part) > 16:
+                    shift_removed_part = shift_removed_part[:13] + "..."
+                disp_str += f"{RED}{shift_removed_part}{RESET}"
+
+                # 2. Cut-removed bits -> RED
+                # These are from orig_bits[abs_shift : abs_shift + cut]
+                cut_removed_part = "".join(str(b) for b in orig_bits[abs_shift : abs_shift + cut])
+                if len(cut_removed_part) > 16:
+                    cut_removed_part = cut_removed_part[:13] + "..."
+                if cut_removed_part:
+                    disp_str += f"{RED}{cut_removed_part}{RESET}"
+
+                # 3. Current bits
+                curr_part = "".join(str(b) for b in curr_bits[:16])
+                disp_str += curr_part
+
+            else:
+                # No shift, just Cut
+                if cut > 0:
+                    cut_part = "".join(str(b) for b in orig_bits[:cut])
+                    if len(cut_part) > 16:
+                        cut_part = cut_part[:13] + "..."
+                    disp_str += f"{RED}{cut_part}{RESET}"
 
                 curr_part = "".join(str(b) for b in curr_bits[:16])
-                first_16_str = f"{RED}{disp_removed}{RESET}{curr_part}"
+                disp_str += curr_part
 
-            elif shift > 0:
-                # Shift Right (Added zeros to start)
-                added_count = shift
-                added_part = "".join(str(b) for b in curr_bits[:added_count])
-
-                # Limit added part display
-                disp_added = added_part[:16]
-
-                rest_part = "".join(str(b) for b in curr_bits[added_count : added_count + 16])
-                first_16_str = f"{GREEN}{disp_added}{RESET}{rest_part}"
-            else:
-                first_16_str = "".join(str(b) for b in curr_bits[:16])
+            first_16_str = disp_str
 
             # --- Format last 16 bits ---
             if shift < 0:
                 # Shift Left (Added zeros to end)
                 added_count = abs(shift)
-                # Last 16 bits of current sequence
                 last_16_curr = curr_bits[-16:]
 
-                # The added zeros are at the very end
-                # If added_count >= 16, all last 16 are green
                 green_len = min(added_count, 16)
                 normal_len = 16 - green_len
 
@@ -170,10 +226,19 @@ def main() -> None:
             elif shift > 0:
                 # Shift Right (Lost bits from end)
                 lost_count = shift
-                # Last 16 bits of ORIGINAL sequence (to show what was lost)
-                last_16_orig = orig_bits[-16:]
+                # We lost bits from the END of the sequence *after cut*.
+                # Sequence after cut was: ([0]*shift + orig)[cut:]
+                # But wait, shift happens first, then cut.
+                # Shift: [0]*shift + orig (truncated)
+                # Cut: remove 'cut' from start.
+                # The end of the sequence is determined by the Shift truncation.
+                # The Cut just shortens the sequence from the start.
 
-                # The lost bits are at the very end of original
+                # So the bits lost at the end are purely due to Shift.
+                # They are the last 'shift' bits of the original sequence.
+                # (Assuming cut doesn't eat into them, which is usually true unless sequence is tiny)
+
+                last_16_orig = orig_bits[-16:]
                 lost_len = min(lost_count, 16)
                 kept_len = 16 - lost_len
 
