@@ -41,13 +41,11 @@ from core import (
 
 DEBUG_SHOW_BITS = True
 
-# Number of bits to trim from the END of the sequence for each type
-TRIM_END_BITS_TYPE_90 = 0
-TRIM_END_BITS_TYPE_10 = 0
-
-# Number of bits to trim from the START of the sequence for each type
-TRIM_START_BITS_TYPE_90 = 0
-TRIM_START_BITS_TYPE_10 = 2
+# Bit shift for each type.
+# Positive (> 0): Insert zeros at the beginning (Shift Right / Delay).
+# Negative (< 0): Remove bits from the beginning (Shift Left / Advance).
+SHIFT_BITS_TYPE_90 = 0
+SHIFT_BITS_TYPE_10 = 2
 
 
 def format_payload(payload: List[int]) -> str:
@@ -80,22 +78,23 @@ def main() -> None:
     # Keep a copy of original queues for debug display
     original_queues = {k: list(v) for k, v in queues.items()}
 
-    # Apply trimming
+    # Apply shifting
     for addr, t in queues:
-        trim_end = 0
-        trim_start = 0
+        shift = 0
         if t == 0x90:
-            trim_end = TRIM_END_BITS_TYPE_90
-            trim_start = TRIM_START_BITS_TYPE_90
+            shift = SHIFT_BITS_TYPE_90
         elif t == 0x10:
-            trim_end = TRIM_END_BITS_TYPE_10
-            trim_start = TRIM_START_BITS_TYPE_10
+            shift = SHIFT_BITS_TYPE_10
 
-        if trim_start > 0:
-            queues[(addr, t)] = queues[(addr, t)][trim_start:]
-
-        if trim_end > 0:
-            queues[(addr, t)] = queues[(addr, t)][:-trim_end]
+        if shift < 0:
+            # Negative shift: Remove bits from start (Shift Left)
+            # We append zeros at the end to maintain length
+            abs_shift = abs(shift)
+            queues[(addr, t)] = queues[(addr, t)][abs_shift:] + [0] * abs_shift
+        elif shift > 0:
+            # Positive shift: Add zeros to start (Shift Right)
+            # We remove bits from the end to maintain length
+            queues[(addr, t)] = ([0] * shift + queues[(addr, t)])[:-shift]
 
     # Optional: debug info to stderr
     print("Bit counts per (addr, type):", file=sys.stderr)
@@ -104,61 +103,86 @@ def main() -> None:
         n = len(queues[(addr, t)])
         total_bits += n
 
-        # Calculate trimmed bits for display
-        trim_end = 0
-        trim_start = 0
+        # Calculate shift for display
+        shift = 0
         if t == 0x90:
-            trim_end = TRIM_END_BITS_TYPE_90
-            trim_start = TRIM_START_BITS_TYPE_90
+            shift = SHIFT_BITS_TYPE_90
         elif t == 0x10:
-            trim_end = TRIM_END_BITS_TYPE_10
-            trim_start = TRIM_START_BITS_TYPE_10
+            shift = SHIFT_BITS_TYPE_10
 
         print(
-            f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} (trimmed start={trim_start}, end={trim_end})",
+            f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} (shift={shift})",
             file=sys.stderr,
         )
 
         if DEBUG_SHOW_BITS:
-            # Use original bits to show what was there, and highlight trimmed part
-            bits = original_queues[(addr, t)]
+            # Use original bits to show what was there
+            orig_bits = original_queues[(addr, t)]
+            # Use current bits to show result
+            curr_bits = queues[(addr, t)]
 
-            # --- Format first 16 bits (START trimming) ---
-            first_16_bits = bits[:16]
-            if trim_start > 0:
-                # Split first 16 into trimmed and kept parts
-                # trimmed part length within the first 16 window
-                trimmed_len = min(trim_start, 16)
+            RED = "\033[91m"
+            GREEN = "\033[92m"
+            RESET = "\033[0m"
 
-                trimmed_part = "".join(str(b) for b in first_16_bits[:trimmed_len])
-                kept_part = "".join(str(b) for b in first_16_bits[trimmed_len:])
+            # --- Format first 16 bits ---
+            if shift < 0:
+                # Shift Left (Removed bits from start)
+                removed_count = abs(shift)
+                removed_part = "".join(str(b) for b in orig_bits[:removed_count])
 
-                # ANSI color for red (trimmed part)
-                RED = "\033[91m"
-                RESET = "\033[0m"
-                first_16_str = f"{RED}{trimmed_part}{RESET}{kept_part}"
+                # Limit removed part display
+                disp_removed = removed_part[:16]
+
+                curr_part = "".join(str(b) for b in curr_bits[:16])
+                first_16_str = f"{RED}{disp_removed}{RESET}{curr_part}"
+
+            elif shift > 0:
+                # Shift Right (Added zeros to start)
+                added_count = shift
+                added_part = "".join(str(b) for b in curr_bits[:added_count])
+
+                # Limit added part display
+                disp_added = added_part[:16]
+
+                rest_part = "".join(str(b) for b in curr_bits[added_count : added_count + 16])
+                first_16_str = f"{GREEN}{disp_added}{RESET}{rest_part}"
             else:
-                first_16_str = "".join(str(b) for b in first_16_bits)
+                first_16_str = "".join(str(b) for b in curr_bits[:16])
 
-            # --- Format last 16 bits (END trimming) ---
-            # We take the last 16 bits of the ORIGINAL sequence
-            last_16_bits = bits[-16:]
+            # --- Format last 16 bits ---
+            if shift < 0:
+                # Shift Left (Added zeros to end)
+                added_count = abs(shift)
+                # Last 16 bits of current sequence
+                last_16_curr = curr_bits[-16:]
 
-            # If trimming happened within the last 16 bits
-            if trim_end > 0:
-                # Split last 16 into kept and trimmed parts
-                # kept part length within the last 16 window
-                kept_len = max(0, 16 - trim_end)
+                # The added zeros are at the very end
+                # If added_count >= 16, all last 16 are green
+                green_len = min(added_count, 16)
+                normal_len = 16 - green_len
 
-                kept_part = "".join(str(b) for b in last_16_bits[:kept_len])
-                trimmed_part = "".join(str(b) for b in last_16_bits[kept_len:])
+                normal_part = "".join(str(b) for b in last_16_curr[:normal_len])
+                green_part = "".join(str(b) for b in last_16_curr[normal_len:])
 
-                # ANSI color for red (trimmed part)
-                RED = "\033[91m"
-                RESET = "\033[0m"
-                last_16_str = f"{kept_part}{RED}{trimmed_part}{RESET}"
+                last_16_str = f"{normal_part}{GREEN}{green_part}{RESET}"
+
+            elif shift > 0:
+                # Shift Right (Lost bits from end)
+                lost_count = shift
+                # Last 16 bits of ORIGINAL sequence (to show what was lost)
+                last_16_orig = orig_bits[-16:]
+
+                # The lost bits are at the very end of original
+                lost_len = min(lost_count, 16)
+                kept_len = 16 - lost_len
+
+                kept_part = "".join(str(b) for b in last_16_orig[:kept_len])
+                lost_part = "".join(str(b) for b in last_16_orig[kept_len:])
+
+                last_16_str = f"{kept_part}{RED}{lost_part}{RESET}"
             else:
-                last_16_str = "".join(str(b) for b in last_16_bits)
+                last_16_str = "".join(str(b) for b in curr_bits[-16:])
 
             print(f"    [{first_16_str}] ... [{last_16_str}]", file=sys.stderr)
 
