@@ -45,11 +45,11 @@ DEBUG_SHOW_BITS = True
 # Positive (> 0): Insert zeros at the beginning (Shift Right / Delay).
 # Negative (< 0): Remove bits from the beginning (Shift Left / Advance).
 SHIFT_BITS_TYPE_90 = 0
-SHIFT_BITS_TYPE_10 = 2
+SHIFT_BITS_TYPE_10 = 0
 
 # Number of bits to cut from the START of the sequence for each type (applied BEFORE shift)
 CUT_START_BITS_TYPE_90 = 0
-CUT_START_BITS_TYPE_10 = 2
+CUT_START_BITS_TYPE_10 = 0
 
 
 def format_payload(payload: List[int]) -> str:
