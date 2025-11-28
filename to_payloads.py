@@ -45,7 +45,7 @@ DEBUG_SHOW_BITS = True
 # Positive (> 0): Insert zeros at the beginning (Shift Right / Delay).
 # Negative (< 0): Remove bits from the beginning (Shift Left / Advance).
 SHIFT_BITS_TYPE_90 = 0
-SHIFT_BITS_TYPE_10 = 0
+SHIFT_BITS_TYPE_10 = -2
 
 # Number of bits to cut from the START of the sequence for each type (applied BEFORE shift)
 CUT_START_BITS_TYPE_90 = 0
@@ -125,8 +125,12 @@ def main() -> None:
             cut = CUT_START_BITS_TYPE_10
             shift = SHIFT_BITS_TYPE_10
 
+        # Calculate padding to next multiple of 40 (group size)
+        padding = (40 - (n % 40)) % 40
+        total_padded = n + padding
+
         print(
-            f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} (shift={shift}, cut={cut})",
+            f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} -> {total_padded} (shift={shift}, cut={cut})",
             file=sys.stderr,
         )
 
@@ -249,7 +253,11 @@ def main() -> None:
             else:
                 last_16_str = "".join(str(b) for b in curr_bits[-16:])
 
-            print(f"    [{first_16_str}] ... [{last_16_str}]", file=sys.stderr)
+            padding_str = ""
+            if padding > 0:
+                padding_str = f" + [{'0' * padding}]"
+
+            print(f"    [{first_16_str}] ... [{last_16_str}]{padding_str}", file=sys.stderr)
 
     print(f"Total bits across all queues: {total_bits}", file=sys.stderr)
 
