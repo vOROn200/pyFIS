@@ -79,9 +79,18 @@ def main() -> None:
     # 3. Build payloads (0x08 .. 0x01 descending)
     payloads = build_column_payloads(queues, groups_per_payload=4)
 
-    # 4. Print payloads to stdout, one per line
+    # 4. Print payloads to stdout AND write to payloads.txt
+    output_lines = []
     for payload in payloads:
-        print(format_payload(payload))
+        line = format_payload(payload)
+        print(line)
+        output_lines.append(line)
+
+    with open("payloads.txt", "w", encoding="utf-8") as f:
+        for line in output_lines:
+            f.write(line + "\n")
+
+    print("Payloads written to payloads.txt", file=sys.stderr)
 
 
 if __name__ == "__main__":
