@@ -39,6 +39,12 @@ from core import (
     build_column_payloads,
 )
 
+DEBUG_SHOW_BITS = True
+
+# Number of bits to trim from the END of the sequence for each type
+TRIM_END_BITS_TYPE_90 = 0
+TRIM_END_BITS_TYPE_10 = 2
+
 
 def format_payload(payload: List[int]) -> str:
     """Format a payload as a CSV line with 0xXX tokens."""
@@ -67,13 +73,65 @@ def main() -> None:
     # 2. Convert logical pixels to per-(addr, type) bit queues
     queues = build_bit_queues_from_matrix(matrix)
 
+    # Keep a copy of original queues for debug display
+    original_queues = {k: list(v) for k, v in queues.items()}
+
+    # Apply trimming
+    for addr, t in queues:
+        trim_count = 0
+        if t == 0x90:
+            trim_count = TRIM_END_BITS_TYPE_90
+        elif t == 0x10:
+            trim_count = TRIM_END_BITS_TYPE_10
+
+        if trim_count > 0:
+            queues[(addr, t)] = queues[(addr, t)][:-trim_count]
+
     # Optional: debug info to stderr
     print("Bit counts per (addr, type):", file=sys.stderr)
     total_bits = 0
     for addr, t in sorted(queues.keys()):
         n = len(queues[(addr, t)])
         total_bits += n
-        print(f"  addr=0x{addr:X}, type=0x{t:X}, bits={n}", file=sys.stderr)
+
+        # Calculate trimmed bits for display
+        trim_count = 0
+        if t == 0x90:
+            trim_count = TRIM_END_BITS_TYPE_90
+        elif t == 0x10:
+            trim_count = TRIM_END_BITS_TYPE_10
+
+        print(f"  addr=0x{addr:X}, type=0x{t:X}, bits={n} (trimmed {trim_count} from end)", file=sys.stderr)
+
+        if DEBUG_SHOW_BITS:
+            # Use original bits to show what was there, and highlight trimmed part
+            bits = original_queues[(addr, t)]
+
+            # Format first 16 bits
+            first_16_str = "".join(str(b) for b in bits[:16])
+
+            # Format last 16 bits (handling trimming visualization)
+            # We take the last 16 bits of the ORIGINAL sequence
+            last_16_bits = bits[-16:]
+
+            # If trimming happened within the last 16 bits
+            if trim_count > 0:
+                # Split last 16 into kept and trimmed parts
+                # kept part length within the last 16 window
+                kept_len = max(0, 16 - trim_count)
+
+                kept_part = "".join(str(b) for b in last_16_bits[:kept_len])
+                trimmed_part = "".join(str(b) for b in last_16_bits[kept_len:])
+
+                # ANSI color for red (trimmed part)
+                RED = "\033[91m"
+                RESET = "\033[0m"
+                last_16_str = f"{kept_part}{RED}{trimmed_part}{RESET}"
+            else:
+                last_16_str = "".join(str(b) for b in last_16_bits)
+
+            print(f"    [{first_16_str}] ... [{last_16_str}]", file=sys.stderr)
+
     print(f"Total bits across all queues: {total_bits}", file=sys.stderr)
 
     # 3. Build payloads (0x08 .. 0x01 descending)
