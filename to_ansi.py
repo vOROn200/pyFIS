@@ -28,10 +28,11 @@ Geometry and addressing are defined in lawo_panel.py.
 """
 
 import sys
+import os
 from collections import deque
 from typing import Deque, Dict, List, Optional, Tuple
 
-from lawo_panel import (
+from panel import (
     MATRIX_ROWS,
     MATRIX_COLS,
     TYPE_90,
@@ -103,8 +104,20 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] not in ("-", ""):
         with open(sys.argv[1], "r", encoding="utf-8") as f:
             lines = f.readlines()
-    else:
+    elif not sys.stdin.isatty():
+        # Data is being piped to stdin
         lines = sys.stdin.readlines()
+    elif os.path.exists("payloads.txt"):
+        # No args, no pipe, but default file exists
+        print("Reading from default file: payloads.txt", file=sys.stderr)
+        with open("payloads.txt", "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    else:
+        # No input provided
+        print("Usage: python3 to_ansi.py [filename]", file=sys.stderr)
+        print("   or: cat data.txt | python3 to_ansi.py", file=sys.stderr)
+        print("   or: (reads payloads.txt if present)", file=sys.stderr)
+        sys.exit(1)
 
     frames, payloads = extract_frames_and_payloads(lines)
 

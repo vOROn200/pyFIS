@@ -28,9 +28,10 @@ IMPORTANT:
 """
 
 import sys
+import os
 from typing import Dict, List, Tuple
 
-from lawo_panel import (
+from panel import (
     MATRIX_ROWS,
     MATRIX_COLS,
     read_ansi_matrix_from_file,
@@ -45,14 +46,20 @@ def format_payload(payload: List[int]) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
+    ansi_path = None
+    if len(sys.argv) > 1:
+        ansi_path = sys.argv[1]
+    elif os.path.exists("ansi.txt"):
+        print("Reading from default file: ansi.txt", file=sys.stderr)
+        ansi_path = "ansi.txt"
+
+    if not ansi_path:
         print(
             f"Usage: {sys.argv[0]} <ansi_matrix.txt>  # 26x48 ANSI-art file",
             file=sys.stderr,
         )
+        print("   or: (reads ansi.txt if present)", file=sys.stderr)
         sys.exit(1)
-
-    ansi_path = sys.argv[1]
 
     # 1. Build logical image from ANSI file
     matrix = read_ansi_matrix_from_file(ansi_path)
