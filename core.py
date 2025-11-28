@@ -3,7 +3,7 @@
 Shared logic for a 26x48 LAWO flip-dot/LED panel:
 
 - Geometry and segment configuration.
-- Type layout inside segments (0x90 / 0x10 + "hole" pixel).
+- Type layout inside segments (0x90 / 0x10 + optional "hole" pixel).
 - Helpers to:
     * parse hex CSV lines and split them into A5 frames vs raw payloads,
     * convert A5 frames / column payloads into (addr, type) bit queues,
@@ -12,17 +12,21 @@ Shared logic for a 26x48 LAWO flip-dot/LED panel:
     * build CMD_COLUMN_DATA_FLIPDOT payloads from these queues,
     * read a 26x48 ANSI-art file into a logical matrix (with warnings).
 
-Scan order inside segments:
+Scan order inside segments (CRITICAL):
 
 - Top segments (row_start == 0):
-    rows:    top -> bottom
-    columns: left -> right
-    start:   top-left corner
+      for col in [left -> right]:
+          for row in [top -> bottom]:
 
 - Bottom segments (row_start > 0):
-    rows:    bottom -> top
-    columns: right -> left
-    start:   bottom-right corner
+      for col in [right -> left]:
+          for row in [bottom -> top]:
+
+Type layout is defined in "type-space" coordinates relative to the TOP LEFT
+of a segment. For bottom segments we mirror scan coordinates into this
+type-space before applying the layout, so that the type pattern is attached
+to the scan origin and the first bit of each (addr, type) queue goes into
+a pixel of the correct type.
 """
 
 import sys
@@ -101,28 +105,28 @@ def reverse_byte(b: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Geometry: mapping segment-local coordinates -> type
+# Geometry helpers
 # ---------------------------------------------------------------------------
 
 
 def logical_type_for_segment_pixel(seg_row: int, seg_col: int) -> Optional[int]:
     """
-    Determine logical pixel type (0x90 or 0x10) for a given pixel inside a
-    segment, based on segment-local coordinates (seg_row, seg_col).
+    Base type layout in local coordinates counted from the TOP LEFT
+    corner of a segment.
 
     seg_row: 0..12 (13 local rows)
     seg_col: 0..23 (24 local columns)
 
     Rules per segment:
 
-      - Special case:
+      - Optional special case (hole pixel):
           bottom-right pixel (seg_row == 12, seg_col == 23) has no type and
-          must not be filled or consume any bits. Return None.
+          must not be filled or consume any bits. Return None when enabled.
 
       - For first 12 rows (seg_row 0..11):
-          seg_row 0 (1st row)  -> type 0x90
-          seg_row 1 (2nd row)  -> type 0x10
-          seg_row 2 -> type 0x90
+          seg_row 0 (1st local row)  -> type 0x90
+          seg_row 1 (2nd local row)  -> type 0x10
+          seg_row 2 (3rd local row)  -> type 0x90
           ...
 
       - For last row (seg_row == 12, seg_col != 23):
@@ -143,6 +147,73 @@ def logical_type_for_segment_pixel(seg_row: int, seg_col: int) -> Optional[int]:
 
     # Last row (seg_row == 12), except bottom-right already handled
     return TYPE_90 if (seg_col % 2 == 0) else TYPE_10
+
+
+def segment_scan_ranges(seg: Dict) -> Tuple[range, range]:
+    """
+    Compute scan ranges for a segment.
+
+    Top segments (row_start == 0):
+        columns: left -> right
+        rows:    top  -> bottom
+
+    Bottom segments (row_start > 0):
+        columns: right -> left
+        rows:    bottom -> top
+    """
+    rs = seg["row_start"]
+    re = seg["row_end"]
+    cs = seg["col_start"]
+    ce = seg["col_end"]
+
+    if rs == 0:
+        # Top segment
+        col_range = range(cs, ce)
+        row_range = range(rs, re)
+    else:
+        # Bottom segment
+        col_range = range(ce - 1, cs - 1, -1)
+        row_range = range(re - 1, rs - 1, -1)
+
+    return col_range, row_range
+
+
+def map_scan_to_type_coords(seg: Dict, row: int, col: int) -> Tuple[int, int]:
+    """
+    Map absolute matrix coordinates (row, col) in scan order to "type-space"
+    segment-local coordinates (seg_row_type, seg_col_type) where the type
+    layout is defined.
+
+    For top segments:
+        type-space origin == scan origin (top-left):
+            seg_row_type = seg_row_scan
+            seg_col_type = seg_col_scan
+
+    For bottom segments:
+        type-space is mirrored relative to scan-space so that the first
+        scanned pixel in a bottom segment has the same local type as the
+        first scanned pixel in a top segment (0x90 at local (0,0)).
+    """
+    rs = seg["row_start"]
+    re = seg["row_end"]
+    cs = seg["col_start"]
+    ce = seg["col_end"]
+
+    seg_row_scan = row - rs
+    seg_col_scan = col - cs
+
+    if rs == 0:
+        # Top segments: no mirroring
+        return seg_row_scan, seg_col_scan
+
+    # Bottom segments: mirror both axes in type-space
+    height = re - rs
+    width = ce - cs
+
+    seg_row_type = (height - 1) - seg_row_scan
+    seg_col_type = (width - 1) - seg_col_scan
+
+    return seg_row_type, seg_col_type
 
 
 # ---------------------------------------------------------------------------
@@ -333,21 +404,18 @@ def fill_matrix_from_segments(
     Build the logical MATRIX_ROWS x MATRIX_COLS matrix using separate queues
     per segment and per type.
 
-    Scan order:
+    Scan order (column-major by segment):
 
       - Top segments (row_start == 0):
-            for row from top to bottom:
-                for col from left to right:
-                    consume next bit for matching (addr, type)
+            for col in [left -> right]:
+                for row in [top -> bottom]:
 
       - Bottom segments (row_start > 0):
-            for row from bottom to top:
-                for col from right to left:
-                    consume next bit for matching (addr, type)
+            for col in [right -> left]:
+                for row in [bottom -> top]:
 
-    Returns:
-      - matrix_bits[row][col]  -> 0 or 1
-      - matrix_types[row][col] -> TYPE_90 / TYPE_10 / None
+    Type layout is mirrored in bottom segments relative to scan order,
+    so that the first scanned pixel in any segment has local type (0,0) == 0x90.
     """
     matrix_bits: List[List[int]] = [[0 for _ in range(MATRIX_COLS)] for _ in range(MATRIX_ROWS)]
     matrix_types: List[List[Optional[int]]] = [[None for _ in range(MATRIX_COLS)] for _ in range(MATRIX_ROWS)]
@@ -364,21 +432,13 @@ def fill_matrix_from_segments(
         q90 = bit_queues.setdefault((addr_90, TYPE_90), deque())
         q10 = bit_queues.setdefault((addr_10, TYPE_10), deque())
 
-        # Define scan ranges depending on segment position (top vs bottom)
-        if rs == 0:
-            # Top segments: top -> bottom, left -> right
-            row_range = range(rs, re)
-            col_range = range(cs, ce)
-        else:
-            # Bottom segments: bottom -> top, right -> left
-            row_range = range(re - 1, rs - 1, -1)
-            col_range = range(ce - 1, cs - 1, -1)
+        col_range, row_range = segment_scan_ranges(seg)
 
-        for row in row_range:
-            for col in col_range:
-                seg_row = row - rs
-                seg_col = col - cs
-                ptype = logical_type_for_segment_pixel(seg_row, seg_col)
+        for col in col_range:
+            for row in row_range:
+                # Map scan-space -> type-space
+                seg_row_type, seg_col_type = map_scan_to_type_coords(seg, row, col)
+                ptype = logical_type_for_segment_pixel(seg_row_type, seg_col_type)
 
                 if ptype is None:
                     # Hole pixel: keep OFF, do not consume bits
@@ -408,19 +468,18 @@ def build_bit_queues_from_matrix(
     """
     Convert the logical matrix into bit queues for each (addr, type) pair.
 
-    Scan order matches fill_matrix_from_segments:
+    Scan order matches fill_matrix_from_segments (column-major per segment):
 
       - Top segments (row_start == 0):
-            rows    top -> bottom
-            columns left -> right
+            columns: left -> right
+            rows:    top    -> bottom
 
       - Bottom segments (row_start > 0):
-            rows    bottom -> top
-            columns right -> left
+            columns: right -> left
+            rows:    bottom -> top
 
-    For each real pixel (type != None), append its bit (0/1) to the
-    corresponding queue keyed by (addr, type), where addr is chosen
-    from segment.addr_90 or segment.addr_10.
+    Type layout is mirrored for bottom segments in the same way as in
+    fill_matrix_from_segments.
     """
     queues: Dict[Tuple[int, int], List[int]] = {}
 
@@ -432,20 +491,12 @@ def build_bit_queues_from_matrix(
         addr_90 = seg["addr_90"]
         addr_10 = seg["addr_10"]
 
-        if rs == 0:
-            # Top segments: top -> bottom, left -> right
-            row_range = range(rs, re)
-            col_range = range(cs, ce)
-        else:
-            # Bottom segments: bottom -> top, right -> left
-            row_range = range(re - 1, rs - 1, -1)
-            col_range = range(ce - 1, cs - 1, -1)
+        col_range, row_range = segment_scan_ranges(seg)
 
-        for row in row_range:
-            for col in col_range:
-                seg_row = row - rs
-                seg_col = col - cs
-                ptype = logical_type_for_segment_pixel(seg_row, seg_col)
+        for col in col_range:
+            for row in row_range:
+                seg_row_type, seg_col_type = map_scan_to_type_coords(seg, row, col)
+                ptype = logical_type_for_segment_pixel(seg_row_type, seg_col_type)
                 if ptype is None:
                     # Hole pixel: no type, does not consume bits
                     continue
