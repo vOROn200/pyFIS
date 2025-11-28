@@ -31,7 +31,7 @@ import sys
 import os
 from typing import Dict, List, Tuple
 
-from panel import (
+from core import (
     MATRIX_ROWS,
     MATRIX_COLS,
     read_ansi_matrix_from_file,

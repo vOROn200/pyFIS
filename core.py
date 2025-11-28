@@ -25,6 +25,9 @@ MATRIX_COLS = 48
 TYPE_90 = 0x90
 TYPE_10 = 0x10
 
+# Feature flags
+ENABLE_HOLE_PIXEL = False
+
 # Segment configuration.
 # row_end / col_end are EXCLUSIVE.
 SEGMENTS = [
@@ -119,7 +122,7 @@ def logical_type_for_segment_pixel(seg_row: int, seg_col: int) -> Optional[int]:
               ...
     """
     # Bottom-right pixel in the segment is a "hole" (no type, no bit)
-    if seg_row == 12 and seg_col == 23:
+    if ENABLE_HOLE_PIXEL and seg_row == 12 and seg_col == 23:
         return None
 
     if seg_row < 12:

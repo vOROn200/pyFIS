@@ -33,6 +33,7 @@ This becomes payload:
 """
 
 import argparse
+import os
 import time
 from typing import List, Tuple
 
@@ -86,10 +87,7 @@ def parse_hex_payload_file(path: str) -> List[Tuple[int, list]]:
                         # still interpret as hex
                         val = int(tok_stripped, 16)
                 except ValueError:
-                    print(
-                        f"Warning: invalid token '{tok_stripped}' "
-                        f"on line {lineno}, skipping this line"
-                    )
+                    print(f"Warning: invalid token '{tok_stripped}' " f"on line {lineno}, skipping this line")
                     bad_token = True
                     break
 
@@ -105,8 +103,7 @@ def parse_hex_payload_file(path: str) -> List[Tuple[int, list]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Send FLIPDOT column data from a payload text file "
-        "via LAWO MONO protocol."
+        description="Send FLIPDOT column data from a payload text file " "via LAWO MONO protocol."
     )
     parser.add_argument(
         "--port",
@@ -123,13 +120,11 @@ def main() -> None:
         "--display-address",
         type=lambda v: int(v, 0),
         default=DEFAULT_DISPLAY_ADDRESS,
-        help="MONO bus display address in hex or decimal "
-        "(default: 0x5)",
+        help="MONO bus display address in hex or decimal " "(default: 0x5)",
     )
     parser.add_argument(
         "--file",
-        required=True,
-        help="Path to the payload text file.",
+        help="Path to the payload text file. Defaults to 'payloads.txt' if present.",
     )
     parser.add_argument(
         "--delay",
@@ -157,12 +152,17 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    payload_file = args.file
+    if not payload_file:
+        if os.path.exists("payloads.txt"):
+            print("No file specified, using default: payloads.txt")
+            payload_file = "payloads.txt"
+        else:
+            parser.error("the following arguments are required: --file (or payloads.txt must exist)")
+
     display_address = args.display_address
 
-    print(
-        f"Opening MONO bus on {args.port} @ {args.baudrate} baud, "
-        f"display address 0x{display_address:X}"
-    )
+    print(f"Opening MONO bus on {args.port} @ {args.baudrate} baud, " f"display address 0x{display_address:X}")
 
     bus = SerialMONOMaster(
         port=args.port,
@@ -187,19 +187,16 @@ def main() -> None:
     time.sleep(args.delay)
 
     # Load payloads from file
-    payloads = parse_hex_payload_file(args.file)
+    payloads = parse_hex_payload_file(payload_file)
     if not payloads:
         print("No payload lines found in file, nothing to send.")
         return
 
-    print(f"Loaded {len(payloads)} payload(s) from '{args.file}'.")
+    print(f"Loaded {len(payloads)} payload(s) from '{payload_file}'.")
 
     # Send each payload as a CMD_COLUMN_DATA_FLIPDOT
     for lineno, payload in payloads:
-        print(
-            f"Sending COLUMN_DATA from line {lineno}: "
-            f"{[f'0x{b:02X}' for b in payload]}"
-        )
+        print(f"Sending COLUMN_DATA from line {lineno}: " f"{[f'0x{b:02X}' for b in payload]}")
         bus.send_command(
             display_address,
             bus.CMD_COLUMN_DATA_FLIPDOT,

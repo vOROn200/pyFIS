@@ -32,7 +32,7 @@ import os
 from collections import deque
 from typing import Deque, Dict, List, Optional, Tuple
 
-from panel import (
+from core import (
     MATRIX_ROWS,
     MATRIX_COLS,
     TYPE_90,
