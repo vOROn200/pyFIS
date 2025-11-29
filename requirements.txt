@@ -1,0 +1,5 @@
+pyserial
+Pillow
+PySide6
+pydantic
+crccheck

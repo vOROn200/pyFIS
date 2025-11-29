@@ -5,7 +5,10 @@ dist/
 __pycache__/
 hello.png
 .venv/
-*.txt
+ansi.txt
+payloads.txt
 *.png
 old/
 README-RU.md
+*.log
+mapping.json
