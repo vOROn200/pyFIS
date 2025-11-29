@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LAWO Segment Calibrator")
+        self.setWindowTitle("Segment Calibrator")
         self.resize(1000, 600)
 
         # Core components
