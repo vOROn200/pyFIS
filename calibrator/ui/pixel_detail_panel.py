@@ -22,6 +22,7 @@ class PixelDetailPanel(QWidget):
     mark_mismatch_requested = Signal()
     reset_status_requested = Signal()
     bit_index_changed = Signal(int)  # new bit index
+    pattern_toggle_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -44,6 +45,7 @@ class PixelDetailPanel(QWidget):
             QPushButton#ConfirmButton { background-color: #059669; }
             QPushButton#MismatchButton { background-color: #DC2626; }
             QPushButton#UpdateBitButton { background-color: #6B7280; }
+            QPushButton#PatternButton { background-color: #4B5563; }
             """
         )
 
@@ -124,6 +126,17 @@ class PixelDetailPanel(QWidget):
         action_group.setLayout(action_layout)
         layout.addWidget(action_group)
 
+        pattern_group = QGroupBox("Pattern")
+        pattern_layout = QVBoxLayout()
+        self.pattern_status = QLabel("Pattern: OFF")
+        self.btn_pattern = QPushButton("Next Pattern")
+        self.btn_pattern.setObjectName("PatternButton")
+        self.btn_pattern.clicked.connect(self.pattern_toggle_requested.emit)
+        pattern_layout.addWidget(self.pattern_status)
+        pattern_layout.addWidget(self.btn_pattern)
+        pattern_group.setLayout(pattern_layout)
+        layout.addWidget(pattern_group)
+
         layout.addStretch()
         self.setLayout(layout)
 
@@ -139,6 +152,7 @@ class PixelDetailPanel(QWidget):
         self.btn_reset.setEnabled(enabled)
         self.extra_group.setEnabled(enabled)
         self.mapping_toggle.setEnabled(enabled and bool(self.current_alt_command))
+        self.btn_pattern.setEnabled(True)
 
     def update_data(self, pixel_data):
         self.current_pixel_data = pixel_data
@@ -197,6 +211,18 @@ class PixelDetailPanel(QWidget):
             self.mapping_toggle.setChecked(False)
             self.mapping_toggle.setEnabled(False)
             self.extra_group.setTitle("Alternate Command")
+
+        self.set_enabled(True)
+
+    def update_pattern_state(self, mode: str):
+        descriptions = {
+            "off": "Pattern: OFF",
+            "fill": "Pattern: Fill (all confirmed)",
+            "checker": "Pattern: Checkerboard",
+            "checker_inv": "Pattern: Checkerboard (inverted)",
+        }
+        self.pattern_status.setText(descriptions.get(mode, "Pattern: OFF"))
+        self.btn_pattern.setText("Next Pattern")
 
         self.set_enabled(True)
 

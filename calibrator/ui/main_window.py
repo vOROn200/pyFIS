@@ -8,7 +8,7 @@ from backend.model import PixelData, SegmentMapping, AlternateCommand
 from backend.persistence import PersistenceManager
 from backend.transport import Transport
 from backend.segment_logic import SegmentLogic
-from backend.command_codec import extract_data_bytes
+from backend.command_codec import extract_data_bytes, build_full_payload
 from ui.pixel_grid_widget import PixelGridWidget
 from ui.pixel_detail_panel import PixelDetailPanel
 from ui.mismatch_selection_dialog import MismatchSelectionDialog
@@ -33,6 +33,8 @@ class MainWindow(QMainWindow):
         self.logic = SegmentLogic(display_address=int(self.config.get("display_address", 0x05)))
         self._blank_payload_template = None
         self._blank_payload_map = {}
+        self.pattern_cycle = ["off", "fill", "checker", "checker_inv"]
+        self.pattern_mode = "off"
 
         self.transport = Transport(
             port=self.config.get("serial_port", "COM1"),
@@ -100,7 +102,9 @@ class MainWindow(QMainWindow):
         self.detail.mark_mismatch_requested.connect(self.on_mark_mismatch)
         self.detail.reset_status_requested.connect(self.on_reset_status)
         self.detail.bit_index_changed.connect(self.on_bit_index_changed)
+        self.detail.pattern_toggle_requested.connect(self.on_pattern_toggle)
         main_layout.addWidget(self.detail, stretch=1)
+        self.detail.update_pattern_state(self.pattern_mode)
 
         # Refresh grid colors
         self.refresh_grid()
@@ -262,6 +266,32 @@ class MainWindow(QMainWindow):
             self.detail.update_data(p)
             logger.info(f"Updated pixel ({r},{c}) bit_index to {new_index}")
 
+    @Slot()
+    def on_pattern_toggle(self):
+        next_mode = self._next_pattern_mode()
+        payloads = self._build_pattern_payloads(next_mode)
+        if not payloads:
+            QMessageBox.warning(self, "Error", "Unable to build blank pattern payloads.")
+            return
+
+        success = self.transport.send_payload_batch(payloads)
+        if not success:
+            QMessageBox.warning(self, "Error", "Failed to send pattern payloads")
+            return
+
+        self.pattern_mode = next_mode
+        self.detail.update_pattern_state(self.pattern_mode)
+        logger.info("Pattern mode switched to %s", self.pattern_mode)
+
+    def _next_pattern_mode(self):
+        if not self.pattern_cycle:
+            return "off"
+        try:
+            idx = self.pattern_cycle.index(self.pattern_mode)
+        except ValueError:
+            return self.pattern_cycle[0]
+        return self.pattern_cycle[(idx + 1) % len(self.pattern_cycle)]
+
     def _compose_full_matrix_payloads(self, active_payload):
         template = self._get_blank_payload_template()
         if not template:
@@ -278,6 +308,70 @@ class MainWindow(QMainWindow):
         else:
             payloads.insert(0, list(active_payload))
         return payloads
+
+    def _build_pattern_payloads(self, mode: str):
+        template = self._get_blank_payload_template()
+        if not template:
+            return []
+
+        if mode == "off":
+            return [list(payload) for payload in template]
+
+        payload_buffers = [bytearray(p) for p in template]
+        parity = None
+        if mode == "checker":
+            parity = 0
+        elif mode == "checker_inv":
+            parity = 1
+
+        for pixel in self.mapping.pixels:
+            if getattr(pixel, "status", "") != "tested_ok":
+                continue
+
+            if parity is not None and ((pixel.row + pixel.col) % 2 != parity):
+                continue
+
+            command_info = self._resolve_pixel_command(pixel)
+            if not command_info:
+                continue
+
+            address, type_code, data_bytes = command_info
+            idx = self._blank_payload_map.get(address)
+            if idx is None or idx >= len(payload_buffers):
+                continue
+
+            payload = build_full_payload(address, type_code, data_bytes)
+            self._merge_payload(payload_buffers[idx], payload)
+
+        return [list(buf) for buf in payload_buffers]
+
+    def _resolve_pixel_command(self, pixel):
+        if getattr(pixel, "remap_active", False) and getattr(pixel, "remap_commands", []):
+            alt = pixel.remap_commands[0]
+            if alt.address is None or alt.type_code is None:
+                return None
+            return alt.address, alt.type_code, list(alt.data)
+
+        if pixel.address is None or pixel.type_code is None:
+            return None
+        data_bytes = pixel.assigned_command or pixel.generated_command
+        if not data_bytes:
+            return None
+        return pixel.address, pixel.type_code, list(data_bytes)
+
+    def _merge_payload(self, target_buffer: bytearray, source_payload):
+        if not target_buffer or not source_payload:
+            return
+
+        if len(source_payload) > len(target_buffer):
+            target_buffer.extend([0] * (len(source_payload) - len(target_buffer)))
+
+        for idx in range(1, min(len(target_buffer), len(source_payload))):
+            pos = idx - 1
+            if pos % 6 == 0:
+                # Type byte; trust template value
+                continue
+            target_buffer[idx] |= source_payload[idx]
 
     def _get_blank_payload_template(self):
         if self._blank_payload_template is None:
