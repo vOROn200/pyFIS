@@ -4,17 +4,24 @@ import logging
 import time
 from typing import List, Sequence
 
-# Add project root to sys.path to import lawo package
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+# Add project root and lawo package directory to sys.path to import lawo package
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+LAWO_PATH = os.path.join(PROJECT_ROOT, "lawo")
+if LAWO_PATH not in sys.path:
+    sys.path.append(LAWO_PATH)
+
+CMD_COLUMN_DATA_FLIPDOT = 0xA0
+CMD_PRE_BITMAP_FLIPDOT = 0x90
+CMD_QUERY = 0x80
 
 try:
     from lawo import SerialMONOMaster
-    from lawo.mono_protocol import CMD_COLUMN_DATA_FLIPDOT, CMD_PRE_BITMAP_FLIPDOT, CMD_QUERY
-except ImportError:
+except ImportError as import_error:
     SerialMONOMaster = None
-    CMD_COLUMN_DATA_FLIPDOT = 0x10
-    CMD_PRE_BITMAP_FLIPDOT = 0x20
-    CMD_QUERY = 0x02
+    logging.getLogger(__name__).error("Transport: failed to import lawo: %s", import_error)
 
 logger = logging.getLogger(__name__)
 
