@@ -10,10 +10,51 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QCheckBox,
     QTextEdit,
+    QToolTip,
+    QGraphicsColorizeEffect,
+    QStyle,
+    QToolButton,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QPropertyAnimation, QSize, Qt
+from PySide6.QtGui import QGuiApplication, QColor
 
 from backend.command_codec import build_full_payload
+
+
+class CopyableGroupBox(QGroupBox):
+    def __init__(self, title, copy_callback, parent=None):
+        super().__init__(title, parent)
+        self.copy_button = QToolButton(self)
+        self.copy_button.setObjectName("CopyButton")
+        self.copy_button.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        self.copy_button.setIconSize(QSize(14, 14))
+        self.copy_button.setFixedSize(20, 20)
+        self.copy_button.setCursor(Qt.PointingHandCursor)
+        self.copy_button.setToolTip("Copy command")
+        self.copy_button.setStyleSheet("QToolButton { border: none; background: transparent; padding: 0; }")
+        self.copy_button.clicked.connect(copy_callback)
+        self.copy_button.hide()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reposition_button()
+
+    def _reposition_button(self):
+        btn = self.copy_button
+        if not btn:
+            return
+        margin = 16
+        title_height = self.fontMetrics().height()
+        y_offset = max(0, (title_height - btn.height()) // 2)
+        btn.move(max(0, self.width() - btn.width() - margin), y_offset)
+
+    def set_copy_visible(self, visible):
+        self.copy_button.setVisible(visible)
+        if visible:
+            self._reposition_button()
+
+    def set_copy_enabled(self, enabled):
+        self.copy_button.setEnabled(enabled)
 
 
 class PixelDetailPanel(QWidget):
@@ -40,12 +81,14 @@ class PixelDetailPanel(QWidget):
             QLabel { color: #F9FAFB; font-size: 13px; }
             QLineEdit { background: #1F2937; color: #F9FAFB; border: 1px solid #475569; border-radius: 4px; padding: 4px; }
             QLineEdit:disabled { color: #9CA3AF; }
+            QCheckBox { color: #F9FAFB; }
             QPushButton { padding: 6px 10px; border-radius: 4px; color: #F9FAFB; border: none; }
             QPushButton#TestButton { background-color: #2563EB; }
             QPushButton#ConfirmButton { background-color: #059669; }
             QPushButton#MismatchButton { background-color: #DC2626; }
             QPushButton#UpdateBitButton { background-color: #6B7280; }
             QPushButton#PatternButton { background-color: #4B5563; }
+            QPushButton#CopyButton { background-color: #4B5563; }
             """
         )
 
@@ -60,25 +103,21 @@ class PixelDetailPanel(QWidget):
         self.lbl_address = QLabel("-")
         self.lbl_status = QLabel("-")
 
-        self.txt_bit_index = QLineEdit()
-        self.txt_bit_index.setMinimumWidth(55)
-        self.txt_bit_index.setMaxLength(8)
-        self.txt_bit_index.setReadOnly(True)
-
-        bit_layout = QHBoxLayout()
-        bit_layout.addWidget(self.txt_bit_index)
+        self.lbl_bit_index = QLabel("-")
 
         info_layout.addRow("Coords (row,col):", self.lbl_coords)
         info_layout.addRow("Type:", self.lbl_type)
         info_layout.addRow("Address:", self.lbl_address)
-        info_layout.addRow("Bit Index:", bit_layout)
+        info_layout.addRow("Bit Index:", self.lbl_bit_index)
         info_layout.addRow("Status:", self.lbl_status)
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
 
         # Command Group
-        cmd_group = QGroupBox("Command")
+        cmd_group = CopyableGroupBox("Command", self._copy_assigned_command)
+        self.command_group = cmd_group
         cmd_layout = QVBoxLayout()
+        cmd_layout.setContentsMargins(12, 28, 12, 12)
         self.txt_assigned = QTextEdit()
         self.txt_assigned.setReadOnly(True)
         self.txt_assigned.setAcceptRichText(True)
@@ -87,11 +126,13 @@ class PixelDetailPanel(QWidget):
         cmd_layout.addWidget(self.txt_assigned)
         cmd_group.setLayout(cmd_layout)
         layout.addWidget(cmd_group)
+        self.btn_copy_assigned = cmd_group.copy_button
+        self.btn_copy_assigned.setToolTip("Copy command")
 
-        self.extra_group = QGroupBox("Alternate Command")
+        self.extra_group = CopyableGroupBox("Alternate Command", self._copy_alt_command)
         self.extra_group.setVisible(False)
         self.extra_group_layout = QVBoxLayout()
-        self.extra_group_layout.setContentsMargins(8, 8, 8, 8)
+        self.extra_group_layout.setContentsMargins(12, 28, 12, 12)
         self.extra_group_field = QTextEdit()
         self.extra_group_field.setReadOnly(True)
         self.extra_group_field.setAcceptRichText(True)
@@ -100,14 +141,17 @@ class PixelDetailPanel(QWidget):
         self.extra_group_layout.addWidget(self.extra_group_field)
         self.extra_group.setLayout(self.extra_group_layout)
         layout.addWidget(self.extra_group)
+        self.btn_copy_alt = self.extra_group.copy_button
+        self.btn_copy_alt.setToolTip("Copy alternate command")
 
         # Actions Group
         action_group = QGroupBox("Actions")
         action_layout = QVBoxLayout()
         self.mapping_toggle = QCheckBox("Mapping")
         self.mapping_toggle.setEnabled(False)
+        self.mapping_toggle.setVisible(False)
         action_layout.addWidget(self.mapping_toggle)
-        self.btn_test = QPushButton("Test (Send)")
+        self.btn_test = QPushButton("Send")
         self.btn_test.setObjectName("TestButton")
         self.btn_test.clicked.connect(self.on_test_clicked)
         self.btn_confirm = QPushButton("Confirm OK")
@@ -148,11 +192,16 @@ class PixelDetailPanel(QWidget):
         self.btn_confirm.setEnabled(enabled)
         self.btn_mismatch.setEnabled(enabled)
         self.txt_assigned.setEnabled(enabled)
-        self.txt_bit_index.setEnabled(enabled)
+        self.lbl_bit_index.setEnabled(enabled)
         self.btn_reset.setEnabled(enabled)
         self.extra_group.setEnabled(enabled)
-        self.mapping_toggle.setEnabled(enabled and bool(self.current_alt_command))
+        if self.mapping_toggle.isVisible():
+            self.mapping_toggle.setEnabled(enabled and bool(self.current_alt_command))
+        else:
+            self.mapping_toggle.setEnabled(False)
         self.btn_pattern.setEnabled(True)
+        self.btn_copy_assigned.setEnabled(enabled and self.btn_copy_assigned.isVisible())
+        self.btn_copy_alt.setEnabled(enabled and self.btn_copy_alt.isVisible())
 
     def update_data(self, pixel_data):
         self.current_pixel_data = pixel_data
@@ -161,10 +210,12 @@ class PixelDetailPanel(QWidget):
             self.lbl_type.setText("-")
             self.lbl_address.setText("-")
             self.lbl_status.setText("-")
-            self.txt_bit_index.setText("")
+            self.lbl_bit_index.setText("-")
             self.txt_assigned.clear()
+            self.command_group.set_copy_visible(False)
             self.current_alt_command = None
             self.extra_group.setVisible(False)
+            self.extra_group.set_copy_visible(False)
             self.mapping_toggle.setChecked(False)
             self.mapping_toggle.setEnabled(False)
             self.set_enabled(False)
@@ -179,18 +230,19 @@ class PixelDetailPanel(QWidget):
         self.lbl_address.setText(
             f"0x{pixel_data.address:X}" if isinstance(pixel_data.address, int) else str(pixel_data.address)
         )
-        self.lbl_status.setText(pixel_data.status)
+        self.lbl_status.setText(self._format_status(pixel_data.status))
 
         # Bit Index
         bit_idx = getattr(pixel_data, "bit_index", -1)
         if bit_idx >= 0:
-            self.txt_bit_index.setText(f"0x{bit_idx:X}")
+            self.lbl_bit_index.setText(f"0x{bit_idx:X}")
         else:
-            self.txt_bit_index.setText("-")
+            self.lbl_bit_index.setText("-")
 
         assign_hex = self._format_data(pixel_data.assigned_command)
         self.txt_assigned.setToolTip(assign_hex)
         self.txt_assigned.setHtml(self._format_data_html(pixel_data.assigned_command))
+        self.command_group.set_copy_visible(bool(pixel_data.assigned_command))
         remap_cmds = getattr(pixel_data, "remap_commands", [])
         remap_active = bool(getattr(pixel_data, "remap_active", False))
 
@@ -201,8 +253,11 @@ class PixelDetailPanel(QWidget):
             self.extra_group_field.setToolTip(alt_hex)
             self.extra_group_field.setHtml(self._format_data_html(alt.data))
             self.extra_group.setVisible(True)
+            self.mapping_toggle.setVisible(True)
             self.mapping_toggle.setEnabled(True)
             self.mapping_toggle.setChecked(remap_active)
+            self.extra_group.set_copy_visible(bool(alt.data))
+            self.btn_copy_alt.setEnabled(bool(alt.data))
             self.extra_group.setTitle(self._format_source_title(alt))
         else:
             self.current_alt_command = None
@@ -210,6 +265,9 @@ class PixelDetailPanel(QWidget):
             self.extra_group.setVisible(False)
             self.mapping_toggle.setChecked(False)
             self.mapping_toggle.setEnabled(False)
+            self.mapping_toggle.setVisible(False)
+            self.extra_group.set_copy_visible(False)
+            self.btn_copy_alt.setEnabled(False)
             self.extra_group.setTitle("Alternate Command")
 
         self.set_enabled(True)
@@ -217,7 +275,7 @@ class PixelDetailPanel(QWidget):
     def update_pattern_state(self, mode: str):
         descriptions = {
             "off": "Pattern: OFF",
-            "fill": "Pattern: Fill (all confirmed)",
+            "fill": "Pattern: Fill",
             "checker": "Pattern: Checkerboard",
             "checker_inv": "Pattern: Checkerboard (inverted)",
         }
@@ -293,3 +351,59 @@ class PixelDetailPanel(QWidget):
 
     def is_mapping_mode(self):
         return self.mapping_toggle.isChecked()
+
+    def _format_status(self, status_code: str) -> str:
+        mapping = {
+            "tested_ok": "OK",
+            "tested_fail": "Mismatch",
+            "unknown": "Unknown",
+        }
+        return mapping.get(status_code, status_code.replace("_", " ").title() if status_code else "-")
+
+    def _copy_assigned_command(self):
+        if not self.current_pixel_data:
+            return
+        data = self.current_pixel_data.assigned_command or []
+        address = self.current_pixel_data.address
+        type_code = self.current_pixel_data.type_code
+        if address is None or type_code is None or not data:
+            QMessageBox.information(self, "Copy", "Command is empty or incomplete.")
+            return
+        payload = build_full_payload(address, type_code, data)
+        self._copy_bytes_to_clipboard(payload, self.txt_assigned, "Pixel command copied")
+
+    def _copy_alt_command(self):
+        if not self.current_alt_command:
+            return
+        data = self.current_alt_command.data or []
+        address = self.current_alt_command.address
+        type_code = self.current_alt_command.type_code
+        if address is None or type_code is None or not data:
+            QMessageBox.information(self, "Copy", "Alternate command is empty or incomplete.")
+            return
+        payload = build_full_payload(address, type_code, data)
+        self._copy_bytes_to_clipboard(payload, self.extra_group_field, "Alternate command copied")
+
+    def _copy_bytes_to_clipboard(self, data, widget, tooltip_text):
+        if not data:
+            QMessageBox.information(self, "Copy", "Command is empty.")
+            return
+        hex_string = ",".join(f"0x{b:02X}" for b in data)
+        QGuiApplication.clipboard().setText(hex_string)
+        QToolTip.showText(widget.mapToGlobal(widget.rect().center()), tooltip_text, widget, widget.rect(), 800)
+        self._flash_copy_feedback(widget)
+
+    def _flash_copy_feedback(self, widget):
+        effect = QGraphicsColorizeEffect(widget)
+        effect.setColor(QColor("#22C55E"))
+        widget.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"strength", widget)
+        animation.setDuration(350)
+        animation.setStartValue(0.8)
+        animation.setEndValue(0.0)
+
+        def _cleanup():
+            widget.setGraphicsEffect(None)
+
+        animation.finished.connect(_cleanup)
+        animation.start(QPropertyAnimation.DeleteWhenStopped)

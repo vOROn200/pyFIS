@@ -1,7 +1,10 @@
 import sys
 import os
 import logging
-from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox, QDialog
+import json
+from datetime import datetime
+from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox, QDialog, QFileDialog
+from PySide6.QtGui import QAction
 from PySide6.QtCore import Slot
 
 from backend.model import PixelData, SegmentMapping, AlternateCommand
@@ -57,6 +60,7 @@ class MainWindow(QMainWindow):
 
         self.init_ui()
         self.connect_transport()
+        self._init_menus()
 
     def init_new_mapping(self):
         seg_name = self.config.get("segment_name", "top-left")
@@ -108,6 +112,19 @@ class MainWindow(QMainWindow):
 
         # Refresh grid colors
         self.refresh_grid()
+
+    def _init_menus(self):
+        menubar = self.menuBar()
+        file_menu = menubar.addMenu("&File")
+
+        self.action_export_mapping = file_menu.addAction("Export mapping")
+        self.action_export_mapping.triggered.connect(self.on_export_mapping)
+
+        file_menu.addSeparator()
+        self.action_quit = file_menu.addAction("Quit")
+        self.action_quit.setShortcut("Ctrl+Q")
+        self.action_quit.setMenuRole(QAction.MenuRole.NoRole)
+        self.action_quit.triggered.connect(self.close)
 
     def connect_transport(self):
         try:
@@ -283,6 +300,28 @@ class MainWindow(QMainWindow):
         self.detail.update_pattern_state(self.pattern_mode)
         logger.info("Pattern mode switched to %s", self.pattern_mode)
 
+    @Slot()
+    def on_export_mapping(self):
+        default_path = os.path.abspath(self.mapping_path)
+        dialog_path = os.path.splitext(default_path)[0] + "-export.json"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Mapping",
+            dialog_path,
+            "JSON Files (*.json);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            export_payload = self._build_mapping_export()
+            with open(file_path, "w", encoding="utf-8") as fp:
+                json.dump(export_payload, fp, indent=2)
+        except Exception as exc:
+            logger.exception("Failed to export mapping: %s", exc)
+            QMessageBox.warning(self, "Export Mapping", f"Failed to export mapping: {exc}")
+            return
+
     def _next_pattern_mode(self):
         if not self.pattern_cycle:
             return "off"
@@ -358,6 +397,34 @@ class MainWindow(QMainWindow):
         if not data_bytes:
             return None
         return pixel.address, pixel.type_code, list(data_bytes)
+
+    def _build_mapping_export(self):
+        export_pixels = []
+        for pixel in self.mapping.pixels:
+            if getattr(pixel, "status", "") != "tested_ok":
+                continue
+
+            command_info = self._resolve_pixel_command(pixel)
+            if not command_info:
+                continue
+
+            address, type_code, data_bytes = command_info
+            payload = build_full_payload(address, type_code, data_bytes)
+            export_pixels.append(
+                {
+                    "row": pixel.row + 1,
+                    "col": pixel.col + 1,
+                    "address": f"0x{address:02X}",
+                    "type": f"0x{type_code:02X}",
+                    "command": ",".join(f"0x{b:02X}" for b in payload),
+                }
+            )
+
+        return {
+            "segment": getattr(self.mapping, "segment_name", "unknown"),
+            "exported_at": datetime.utcnow().isoformat(),
+            "pixels": export_pixels,
+        }
 
     def _merge_payload(self, target_buffer: bytearray, source_payload):
         if not target_buffer or not source_payload:
