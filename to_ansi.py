@@ -5,8 +5,8 @@ print it as ANSI-art, highlighting different pixel types in different colors.
 
 Supported input formats (one frame/payload per line):
 
-1) Old 0xA5 frame format:
-   0x7E,0xA5,<addr>,<payload...>,<checksum>,0x7E
+1) Legacy command frame format:
+    0x7E,<0xA0 | display_addr>,<addr>,<payload...>,<checksum>,0x7E
 
    where payload is interpreted as groups of 6 bytes:
        [type_byte, b0, b1, b2, b3, b4]
@@ -37,6 +37,7 @@ from core import (
     MATRIX_COLS,
     TYPE_90,
     TYPE_10,
+    A5_COMMAND_HEADER,
     extract_frames_and_payloads,
     build_addr_type_bit_queues_from_frames,
     build_addr_type_bit_queues_from_payloads,
@@ -46,7 +47,6 @@ from core import (
 # ANSI characters for output
 ANSI_CHAR_ON = "X"
 ANSI_CHAR_OFF = "·"
-
 # ANSI color codes
 ANSI_RESET = "\x1b[0m"
 ANSI_COLOR_90 = "\x1b[33m"  # yellow for type 0x90
@@ -123,7 +123,7 @@ def main() -> None:
 
     if not frames and not payloads:
         print(
-            "No 0xA5 frames or payload lines found in input.",
+            f"No 0x{A5_COMMAND_HEADER:02X} frames or payload lines found in input.",
             file=sys.stderr,
         )
         return

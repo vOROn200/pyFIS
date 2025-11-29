@@ -65,7 +65,7 @@ class PixelDetailPanel(QWidget):
         bit_layout = QHBoxLayout()
         bit_layout.addWidget(self.txt_bit_index)
 
-        info_layout.addRow("Coords (col,row):", self.lbl_coords)
+        info_layout.addRow("Coords (row,col):", self.lbl_coords)
         info_layout.addRow("Type:", self.lbl_type)
         info_layout.addRow("Address:", self.lbl_address)
         info_layout.addRow("Bit Index:", bit_layout)
@@ -151,7 +151,7 @@ class PixelDetailPanel(QWidget):
 
         display_col = pixel_data.col + 1
         display_row = pixel_data.row + 1
-        self.lbl_coords.setText(f"({display_col}, {display_row})")
+        self.lbl_coords.setText(f"({display_row}, {display_col})")
         self.lbl_type.setText(
             f"0x{pixel_data.type_code:X}" if isinstance(pixel_data.type_code, int) else str(pixel_data.type_code)
         )

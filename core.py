@@ -41,6 +41,10 @@ MATRIX_COLS = 48
 TYPE_90 = 0x90
 TYPE_10 = 0x10
 
+# Default MONO bus display address used by legacy 0xA5 frames
+DEFAULT_DISPLAY_ADDRESS = 0x05
+A5_COMMAND_HEADER = 0xA0 | (DEFAULT_DISPLAY_ADDRESS & 0x0F)
+
 # Feature flags
 ENABLE_HOLE_PIXEL = False
 
@@ -251,14 +255,14 @@ def extract_frames_and_payloads(
     """
     Split input into two collections:
 
-      - frames: full 0xA5 frames of the form
-            [0x7E, 0xA5, addr, payload..., checksum, 0x7E]
+    - frames: full 0xA5 frames of the form
+        [0x7E, A5_COMMAND_HEADER, addr, payload..., checksum, 0x7E]
 
       - payloads: "raw" payload lines of the form
             [addr, type0, d0, d1, d2, d3, d4, type1, ...]
 
     Detection logic per non-empty, successfully-parsed line:
-      - if bytes[0] == 0x7E and bytes[1] == 0xA5 and bytes[-1] == 0x7E:
+    - if bytes[0] == 0x7E and bytes[1] == A5_COMMAND_HEADER and bytes[-1] == 0x7E:
             -> frame
       - else:
             -> payload
@@ -276,7 +280,12 @@ def extract_frames_and_payloads(
         if len(bytes_line) < 2:
             continue
 
-        if bytes_line[0] == 0x7E and bytes_line[-1] == 0x7E and len(bytes_line) >= 5 and bytes_line[1] == 0xA5:
+        if (
+            bytes_line[0] == 0x7E
+            and bytes_line[-1] == 0x7E
+            and len(bytes_line) >= 5
+            and bytes_line[1] == A5_COMMAND_HEADER
+        ):
             frames.append(bytes_line)
         else:
             payloads.append(bytes_line)
@@ -303,7 +312,7 @@ def build_addr_type_bit_queues_from_frames(
     Given all 0xA5 frames, build bit queues keyed by (addr, type).
 
     For each frame:
-      frame = [0x7E, 0xA5, addr, payload..., checksum, 0x7E]
+            frame = [0x7E, A5_COMMAND_HEADER, addr, payload..., checksum, 0x7E]
 
       payload is split into groups of 6 bytes:
         [type_byte, b0, b1, b2, b3, b4]
@@ -318,7 +327,7 @@ def build_addr_type_bit_queues_from_frames(
 
     for frame in frames:
         addr = frame[2]
-        payload = frame[3:-2]  # exclude: 0x7E, 0xA5, addr, checksum, 0x7E
+        payload = frame[3:-2]  # exclude header/trailer (0x7E, cmd, addr, checksum, 0x7E)
         i = 0
 
         while i + 6 <= len(payload):
@@ -348,8 +357,8 @@ def build_addr_type_bit_queues_from_payloads(
 
         [addr, type0, b0, b1, b2, b3, b4, type1, b0, ..., ...]
 
-    We interpret it exactly as the payload part of the 0xA5 frame, but with
-    an explicit leading addr byte instead of coming from the 0xA5 header.
+    We interpret it exactly as the payload part of the legacy frame, but with
+    an explicit leading addr byte instead of coming from the A5 header byte.
 
     For each payload line:
       addr = payload[0]

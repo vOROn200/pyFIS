@@ -13,8 +13,9 @@ except ImportError:
 
 
 class SegmentLogic:
-    def __init__(self):
-        pass
+    def __init__(self, display_address: int = 0x05):
+        # store lower nibble to match MONO address encoding
+        self.display_address = display_address & 0x0F
 
     @staticmethod
     def map_display_row_to_physical(seg: Dict, seg_row: int) -> int:
@@ -145,19 +146,7 @@ class SegmentLogic:
                     break
 
         if frame_format == "A5-frame":
-            # Wrap in 0x7E 0xA5 ... checksum 0x7E
-            # Checksum: XOR of all bytes from 0xA5 to end of payload (inclusive) ?
-            # Need to check protocol.
-            # Usually: 0x7E, 0xA5, <payload...>, <checksum>, 0x7E
-            # Checksum is XOR sum of 0xA5 + payload bytes.
-
-            frame = [0x7E, 0xA5] + target_payload
-            checksum = 0xA5
-            for b in target_payload:
-                checksum ^= b
-            frame.append(checksum)
-            frame.append(0x7E)
-            return frame
+            return self._wrap_in_a5_frame(target_payload)
 
         return target_payload
 
@@ -269,12 +258,16 @@ class SegmentLogic:
             return []
 
         if frame_format == "A5-frame":
-            frame = [0x7E, 0xA5] + target_payload
-            checksum = 0xA5
-            for b in target_payload:
-                checksum ^= b
-            frame.append(checksum)
-            frame.append(0x7E)
-            return frame
+            return self._wrap_in_a5_frame(target_payload)
 
         return target_payload
+
+    def _wrap_in_a5_frame(self, payload: List[int]) -> List[int]:
+        command_byte = 0xA0 | self.display_address
+        frame = [0x7E, command_byte] + payload
+        checksum = command_byte
+        for b in payload:
+            checksum ^= b
+        frame.append(checksum)
+        frame.append(0x7E)
+        return frame

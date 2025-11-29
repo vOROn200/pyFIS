@@ -24,12 +24,16 @@ class MainWindow(QMainWindow):
         # Core components
         self.persistence = PersistenceManager()
         self.config = self.persistence.config
-        self.logic = SegmentLogic()
+        self.logic = SegmentLogic(display_address=int(self.config.get("display_address", 0x05)))
 
         self.transport = Transport(
             port=self.config.get("serial_port", "COM1"),
             baudrate=self.config.get("baudrate", 19200),
             simulation=False,  # Can be toggled
+            display_address=int(self.config.get("display_address", 0x05)),
+            pre_width=int(self.config.get("pre_bitmap_width", 0x08)),
+            pre_height=int(self.config.get("pre_bitmap_height", 0x04)),
+            command_delay=float(self.config.get("command_delay_seconds", 0.2)),
         )
 
         # Load mapping
