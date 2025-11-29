@@ -1,4 +1,5 @@
 import sys
+import os
 import logging
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox, QDialog
 from PySide6.QtCore import Slot
@@ -22,7 +23,11 @@ class MainWindow(QMainWindow):
         self.resize(1000, 600)
 
         # Core components
-        self.persistence = PersistenceManager()
+        # Determine config path relative to this file (ui/main_window.py -> ../config.json)
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(base_dir, "config.json")
+        
+        self.persistence = PersistenceManager(config_path=config_path)
         self.config = self.persistence.config
         self.frame_format = self.config.get("frame_format", "raw-payload")
         self.logic = SegmentLogic(display_address=int(self.config.get("display_address", 0x05)))
