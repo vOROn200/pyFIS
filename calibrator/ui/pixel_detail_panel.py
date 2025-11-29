@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 from PySide6.QtCore import Signal, QPropertyAnimation, QSize, Qt
-from PySide6.QtGui import QGuiApplication, QColor
+from PySide6.QtGui import QGuiApplication, QColor, QIcon
 
 from backend.command_codec import build_full_payload
 
@@ -26,7 +26,10 @@ class CopyableGroupBox(QGroupBox):
         super().__init__(title, parent)
         self.copy_button = QToolButton(self)
         self.copy_button.setObjectName("CopyButton")
-        self.copy_button.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        icon = QIcon.fromTheme("edit-copy")
+        if icon.isNull():
+            icon = self.style().standardIcon(QStyle.SP_FileDialogListView)
+        self.copy_button.setIcon(icon)
         self.copy_button.setIconSize(QSize(14, 14))
         self.copy_button.setFixedSize(20, 20)
         self.copy_button.setCursor(Qt.PointingHandCursor)
