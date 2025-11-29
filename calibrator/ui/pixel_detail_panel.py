@@ -96,6 +96,8 @@ class PixelDetailPanel(QWidget):
         self.extra_group_field.setFixedHeight(48)
         self.extra_group_field.setLineWrapMode(QTextEdit.NoWrap)
         self.extra_group_layout.addWidget(self.extra_group_field)
+        self.extra_group_meta = QLabel("Source: -")
+        self.extra_group_layout.addWidget(self.extra_group_meta)
         self.extra_group.setLayout(self.extra_group_layout)
         layout.addWidget(self.extra_group)
 
@@ -189,12 +191,14 @@ class PixelDetailPanel(QWidget):
             self.extra_group.setVisible(True)
             self.mapping_toggle.setEnabled(True)
             self.mapping_toggle.setChecked(remap_active)
+            self.extra_group_meta.setText(self._format_source_coords(alt))
         else:
             self.current_alt_command = None
             self.extra_group_field.clear()
             self.extra_group.setVisible(False)
             self.mapping_toggle.setChecked(False)
             self.mapping_toggle.setEnabled(False)
+            self.extra_group_meta.setText("Source: -")
 
         self.set_enabled(True)
 
@@ -255,6 +259,13 @@ class PixelDetailPanel(QWidget):
             color = colors[idx % len(colors)]
             chunks.append(f"<span style='color:{color};font-weight:600;'>{b:02X}</span>")
         return " ".join(chunks)
+
+    def _format_source_coords(self, alt_command):
+        row = getattr(alt_command, "source_row", None)
+        col = getattr(alt_command, "source_col", None)
+        if row is None or col is None:
+            return "Source: -"
+        return f"Source: row {row + 1}, col {col + 1}"
 
     def is_mapping_mode(self):
         return self.mapping_toggle.isChecked()

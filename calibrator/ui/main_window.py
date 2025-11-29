@@ -26,7 +26,7 @@ class MainWindow(QMainWindow):
         # Determine config path relative to this file (ui/main_window.py -> ../config.json)
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         config_path = os.path.join(base_dir, "config.json")
-        
+
         self.persistence = PersistenceManager(config_path=config_path)
         self.config = self.persistence.config
         self.frame_format = self.config.get("frame_format", "raw-payload")
@@ -207,7 +207,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Current pixel command is not defined.")
             return
 
-        alt_command = AlternateCommand(address=p.address, type_code=p.type_code, data=list(current_command))
+        alt_command = AlternateCommand(
+            address=p.address,
+            type_code=p.type_code,
+            data=list(current_command),
+            source_row=p.row,
+            source_col=p.col,
+        )
         target.remap_commands = [alt_command]
         target.remap_active = False
 

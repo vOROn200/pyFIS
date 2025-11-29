@@ -7,6 +7,8 @@ class AlternateCommand(BaseModel):
     address: int
     type_code: int
     data: List[int] = Field(default_factory=list)
+    source_row: Optional[int] = None
+    source_col: Optional[int] = None
 
 
 class PixelData(BaseModel):
