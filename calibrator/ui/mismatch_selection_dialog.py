@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 from PySide6.QtCore import Qt
 
 from ui.pixel_grid_widget import PixelGridWidget
@@ -38,16 +38,15 @@ class MismatchSelectionDialog(QDialog):
         layout.addWidget(self.selection_label)
 
         buttons_layout = QHBoxLayout()
-        self.btn_toggle_grid = QPushButton("Toggle calibration grid")
-        self.btn_toggle_grid.setEnabled(False)
-        self.btn_toggle_grid.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        buttons_layout.addWidget(self.btn_toggle_grid)
-
         buttons_layout.addStretch(1)
 
-        self.btn_select = QPushButton("Assign command")
+        self.btn_select = QPushButton("Assign")
         self.btn_select.setEnabled(False)
         self.btn_select.clicked.connect(self._on_confirm)
+        self.btn_select.setStyleSheet(
+            "QPushButton { background-color: #059669; color: #F9FAFB; padding: 6px 18px; border: none; border-radius: 4px; }"
+            "QPushButton:disabled { background-color: #1F2937; color: #6B7280; }"
+        )
         buttons_layout.addWidget(self.btn_select)
 
         btn_cancel = QPushButton("Cancel")
