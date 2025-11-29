@@ -24,7 +24,10 @@ class MainWindow(QMainWindow):
         # Core components
         self.persistence = PersistenceManager()
         self.config = self.persistence.config
+        self.frame_format = self.config.get("frame_format", "raw-payload")
         self.logic = SegmentLogic(display_address=int(self.config.get("display_address", 0x05)))
+        self._blank_payload_template = None
+        self._blank_payload_map = {}
 
         self.transport = Transport(
             port=self.config.get("serial_port", "COM1"),
@@ -57,9 +60,7 @@ class MainWindow(QMainWindow):
         for r in range(13):
             for c in range(24):
                 info = self.logic.get_pixel_info(seg_name, r, c)
-                cmd = self.logic.generate_single_pixel_command(
-                    seg_name, r, c, self.config.get("frame_format", "raw-payload")
-                )
+                cmd = self.logic.generate_single_pixel_command(seg_name, r, c, self.frame_format)
                 compact_cmd = extract_data_bytes(cmd)
 
                 pixel = PixelData(
@@ -133,7 +134,12 @@ class MainWindow(QMainWindow):
             # Send clear command (TODO: implement clear command in transport or logic)
             pass
 
-        success = self.transport.send_command(cmd_bytes)
+        payload_batch = self._compose_full_matrix_payloads(cmd_bytes)
+        if not payload_batch:
+            QMessageBox.warning(self, "Error", "Unable to build payload batch")
+            return
+
+        success = self.transport.send_payload_batch(payload_batch)
         if success:
             logger.info(f"Sent command for pixel {self.current_pixel}")
             updated = False
@@ -234,7 +240,7 @@ class MainWindow(QMainWindow):
             # Regenerate command from bit index
             seg_name = self.mapping.segment_name
             cmd = self.logic.generate_command_from_bit_index(
-                seg_name, p.address, p.type_code, new_index, self.config.get("frame_format", "raw-payload")
+                seg_name, p.address, p.type_code, new_index, self.frame_format
             )
 
             compact = extract_data_bytes(cmd)
@@ -244,6 +250,33 @@ class MainWindow(QMainWindow):
             self.save_state()
             self.detail.update_data(p)
             logger.info(f"Updated pixel ({r},{c}) bit_index to {new_index}")
+
+    def _compose_full_matrix_payloads(self, active_payload):
+        template = self._get_blank_payload_template()
+        if not template:
+            return [list(active_payload)] if active_payload else []
+
+        payloads = [list(payload) for payload in template]
+        if not active_payload:
+            return payloads
+
+        addr = active_payload[0]
+        idx = self._blank_payload_map.get(addr)
+        if idx is not None:
+            payloads[idx] = list(active_payload)
+        else:
+            payloads.insert(0, list(active_payload))
+        return payloads
+
+    def _get_blank_payload_template(self):
+        if self._blank_payload_template is None:
+            payloads = self.logic.generate_blank_payloads("raw-payload")
+            self._blank_payload_template = payloads
+            self._blank_payload_map = {}
+            for index, payload in enumerate(payloads):
+                if payload:
+                    self._blank_payload_map[payload[0]] = index
+        return self._blank_payload_template
 
     def save_state(self):
         self.persistence.save_mapping(self.mapping_path, self.mapping)

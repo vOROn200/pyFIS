@@ -150,6 +150,19 @@ class SegmentLogic:
 
         return target_payload
 
+    def generate_blank_payloads(self, frame_format: str = "raw-payload") -> List[List[int]]:
+        """Build zeroed payloads for every address/type combination."""
+        if not core:
+            return []
+
+        matrix = [[0 for _ in range(core.MATRIX_COLS)] for _ in range(core.MATRIX_ROWS)]
+        queues = core.build_bit_queues_from_matrix(matrix)
+        payloads = core.build_column_payloads(queues)
+
+        if frame_format == "A5-frame":
+            return [self._wrap_in_a5_frame(p) for p in payloads]
+        return payloads
+
     def get_pixel_info(self, segment_name: str, seg_row: int, seg_col: int):
         seg = self.get_segment_info(segment_name)
         if not seg:

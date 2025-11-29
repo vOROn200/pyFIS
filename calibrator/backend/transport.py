@@ -56,11 +56,21 @@ class Transport:
             raise
 
     def send_command(self, command_bytes: Sequence[int]):
-        """Send the payload wrapped with QUERY/PRE/QUERY like send.py."""
-        payload = [int(b) & 0xFF for b in command_bytes]
+        """Compatibility wrapper for sending a single payload."""
+        return self.send_payload_batch([command_bytes])
+
+    def send_payload_batch(self, payload_batches: Sequence[Sequence[int]]):
+        """Send a batch of payloads with a single QUERY/PRE/QUERY sequence."""
+        sanitized_batches: List[List[int]] = []
+        for batch in payload_batches:
+            sanitized_batches.append([int(b) & 0xFF for b in batch])
+
+        if not sanitized_batches:
+            logger.warning("Transport: No payloads to send")
+            return False
 
         if self.simulation:
-            self._log_simulated_sequence(payload)
+            self._log_simulated_batch(sanitized_batches)
             return True
 
         if not self.master:
@@ -71,8 +81,9 @@ class Transport:
             return False
         if not self._send_bus_command(CMD_PRE_BITMAP_FLIPDOT, self.pre_bitmap_payload, "PRE_BITMAP"):
             return False
-        if not self._send_bus_command(CMD_COLUMN_DATA_FLIPDOT, payload, "COLUMN_DATA"):
-            return False
+        for idx, payload in enumerate(sanitized_batches):
+            if not self._send_bus_command(CMD_COLUMN_DATA_FLIPDOT, payload, f"COLUMN_DATA[{idx}]"):
+                return False
         return self._send_bus_command(CMD_QUERY, [], "final QUERY")
 
     def _send_bus_command(self, command: int, payload: List[int], label: str) -> bool:
@@ -89,15 +100,15 @@ class Transport:
         if self.command_delay > 0:
             time.sleep(self.command_delay)
 
-    def _log_simulated_sequence(self, payload: List[int]):
+    def _log_simulated_batch(self, payloads: List[List[int]]):
         hex_query = self._format_bytes([])
         hex_pre = self._format_bytes(self.pre_bitmap_payload)
-        hex_payload = self._format_bytes(payload)
+        payload_logs = "; ".join(self._format_bytes(p) for p in payloads)
         logger.info(
-            "Transport [SIM]: QUERY(%s) -> PRE_BITMAP(%s) -> COLUMN_DATA(%s) -> QUERY(%s)",
+            "Transport [SIM]: QUERY(%s) -> PRE_BITMAP(%s) -> COLUMN_DATA_BATCH[%s] -> QUERY(%s)",
             hex_query,
             hex_pre,
-            hex_payload,
+            payload_logs,
             hex_query,
         )
 

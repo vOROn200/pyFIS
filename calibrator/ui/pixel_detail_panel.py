@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QGroupBox,
     QCheckBox,
+    QTextEdit,
 )
 from PySide6.QtCore import Signal
 
@@ -76,8 +77,11 @@ class PixelDetailPanel(QWidget):
         # Command Group
         cmd_group = QGroupBox("Command (Hex)")
         cmd_layout = QVBoxLayout()
-        self.txt_assigned = QLineEdit()
+        self.txt_assigned = QTextEdit()
         self.txt_assigned.setReadOnly(True)
+        self.txt_assigned.setAcceptRichText(True)
+        self.txt_assigned.setFixedHeight(48)
+        self.txt_assigned.setLineWrapMode(QTextEdit.NoWrap)
         cmd_layout.addWidget(self.txt_assigned)
         cmd_group.setLayout(cmd_layout)
         layout.addWidget(cmd_group)
@@ -86,8 +90,11 @@ class PixelDetailPanel(QWidget):
         self.extra_group.setVisible(False)
         self.extra_group_layout = QVBoxLayout()
         self.extra_group_layout.setContentsMargins(8, 8, 8, 8)
-        self.extra_group_field = QLineEdit()
+        self.extra_group_field = QTextEdit()
         self.extra_group_field.setReadOnly(True)
+        self.extra_group_field.setAcceptRichText(True)
+        self.extra_group_field.setFixedHeight(48)
+        self.extra_group_field.setLineWrapMode(QTextEdit.NoWrap)
         self.extra_group_layout.addWidget(self.extra_group_field)
         self.extra_group.setLayout(self.extra_group_layout)
         layout.addWidget(self.extra_group)
@@ -141,7 +148,7 @@ class PixelDetailPanel(QWidget):
             self.lbl_address.setText("-")
             self.lbl_status.setText("-")
             self.txt_bit_index.setText("")
-            self.txt_assigned.setText("")
+            self.txt_assigned.clear()
             self.current_alt_command = None
             self.extra_group.setVisible(False)
             self.mapping_toggle.setChecked(False)
@@ -168,14 +175,17 @@ class PixelDetailPanel(QWidget):
             self.txt_bit_index.setText("-")
 
         assign_hex = self._format_data(pixel_data.assigned_command)
-        self.txt_assigned.setText(assign_hex)
+        self.txt_assigned.setToolTip(assign_hex)
+        self.txt_assigned.setHtml(self._format_data_html(pixel_data.assigned_command))
         remap_cmds = getattr(pixel_data, "remap_commands", [])
         remap_active = bool(getattr(pixel_data, "remap_active", False))
 
         if remap_cmds:
             alt = remap_cmds[0]
             self.current_alt_command = alt
-            self.extra_group_field.setText(self._format_data(alt.data))
+            alt_hex = self._format_data(alt.data)
+            self.extra_group_field.setToolTip(alt_hex)
+            self.extra_group_field.setHtml(self._format_data_html(alt.data))
             self.extra_group.setVisible(True)
             self.mapping_toggle.setEnabled(True)
             self.mapping_toggle.setChecked(remap_active)
@@ -235,6 +245,16 @@ class PixelDetailPanel(QWidget):
         if not data_bytes:
             return ""
         return "".join(f"{b:02X}" for b in data_bytes)
+
+    def _format_data_html(self, data_bytes):
+        if not data_bytes:
+            return "<span style='color:#9CA3AF;'>--</span>"
+        colors = ["#F97316", "#0EA5E9", "#A855F7", "#22C55E"]
+        chunks = []
+        for idx, b in enumerate(data_bytes):
+            color = colors[idx % len(colors)]
+            chunks.append(f"<span style='color:{color};font-weight:600;'>{b:02X}</span>")
+        return " ".join(chunks)
 
     def is_mapping_mode(self):
         return self.mapping_toggle.isChecked()
