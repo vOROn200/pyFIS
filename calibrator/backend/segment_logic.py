@@ -16,6 +16,7 @@ class SegmentLogic:
     def __init__(self, display_address: int = 0x05):
         # store lower nibble to match MONO address encoding
         self.display_address = display_address & 0x0F
+        self.always_on_addresses = {0x08, 0x06}
 
     @staticmethod
     def map_display_row_to_physical(seg: Dict, seg_row: int) -> int:
@@ -157,7 +158,7 @@ class SegmentLogic:
 
         matrix = [[0 for _ in range(core.MATRIX_COLS)] for _ in range(core.MATRIX_ROWS)]
         queues = core.build_bit_queues_from_matrix(matrix)
-        payloads = core.build_column_payloads(queues)
+        payloads = [self._apply_bank_overrides(p) for p in core.build_column_payloads(queues)]
 
         if frame_format == "A5-frame":
             return [self._wrap_in_a5_frame(p) for p in payloads]
@@ -284,3 +285,20 @@ class SegmentLogic:
         frame.append(checksum)
         frame.append(0x7E)
         return frame
+
+    def _apply_bank_overrides(self, payload: List[int]) -> List[int]:
+        if not payload:
+            return payload
+        addr = payload[0]
+        if addr not in self.always_on_addresses:
+            return payload
+
+        filled = list(payload)
+        idx = 1
+        while idx < len(filled):
+            data_start = idx + 1
+            data_end = min(data_start + 5, len(filled))
+            for i in range(data_start, data_end):
+                filled[i] = 0xFF
+            idx += 6
+        return filled
